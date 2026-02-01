@@ -1,5 +1,6 @@
 // --- 1. 设置与依赖管理 ---
 const SETTINGS_KEY = "music_tagger_settings";
+// 强制版本号，确保兼容性
 const URLS = {
     id3: "https://unpkg.com/browser-id3-writer@4.4.0/dist/browser-id3-writer.js",
     wavesurfer: "https://unpkg.com/wavesurfer.js@7.7.1/dist/wavesurfer.min.js",
@@ -38,7 +39,7 @@ async function loadLibraries() {
     }
 }
 
-// --- 2. 弹窗 UI (核心修改：整体滚动条) ---
+// --- 2. 弹窗 UI (核心修改：整体滚动) ---
 function createCustomPopup(htmlContent) {
     const old = document.getElementById('mt-custom-overlay');
     if (old) old.remove();
@@ -49,10 +50,8 @@ function createCustomPopup(htmlContent) {
         position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
         backgroundColor: 'rgba(0, 0, 0, 0.85)',
         zIndex: 20000,
-        display: 'flex', justifyContent: 'center', alignItems: 'flex-start', // 顶部对齐
-        padding: '30px 0', // 上下留白，防止贴边
-        backdropFilter: 'blur(5px)',
-        overflowY: 'auto' // 允许背景滚动（针对极小屏幕）
+        display: 'flex', justifyContent: 'center', alignItems: 'flex-start',
+        paddingTop: '30px', backdropFilter: 'blur(5px)'
     });
 
     const container = document.createElement('div');
@@ -60,14 +59,14 @@ function createCustomPopup(htmlContent) {
     Object.assign(container.style, {
         position: 'relative', 
         width: '1000px', maxWidth: '95%', 
-        // 【修改重点】不再固定高度，而是设置最大高度并允许自动滚动
-        height: 'auto',
+        // 【修改】改为最大高度限制，内容过多时内部滚动
         maxHeight: '90vh', 
-        overflowY: 'auto', // 【修改重点】整体出现垂直滚动条
+        height: 'auto',
         backgroundColor: '#1e1e1e', border: '1px solid #333', color: '#eee',
-        borderRadius: '12px', padding: '20px', 
+        borderRadius: '12px', padding: '25px', 
         boxShadow: '0 10px 40px rgba(0,0,0,0.8)',
-        display: 'flex', flexDirection: 'column', gap: '15px'
+        display: 'flex', flexDirection: 'column', gap: '15px', 
+        overflowY: 'auto' // 【核心】开启整体垂直滚动条，防止遮挡
     });
 
     const closeBtn = document.createElement('div');
@@ -146,11 +145,11 @@ function openTaggerModal() {
         <button id="mt-process-btn" style="width:100%; padding:10px; background:#2b5e99; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold;">⚡ 开始 AI 分析 & 加载编辑器</button>
         <div id="mt-status" style="color:cyan; font-weight:bold; height:20px; font-size:14px;"></div>
 
-        <!-- 底部：编辑器区域 -->
-        <!-- 【修改】移除 flex:1 和 hidden，让内容自然撑开 -->
-        <div id="mt-editor-area" style="display:none; flex-direction:column; border-top:1px solid #444; padding-top:10px;">
+        <!-- 底部：编辑器区域 (初始隐藏) -->
+        <!-- 【修改】移除 overflow:hidden，允许自然撑开高度 -->
+        <div id="mt-editor-area" style="display:none; flex-direction:column; flex:1; border-top:1px solid #444; padding-top:10px;">
             
-            <!-- 播放控制栏 (Sticky: 滚动时吸顶，方便操作) -->
+            <!-- 播放控制栏 (sticky 粘性定位，滚动时吸顶) -->
             <div style="display:flex; gap:15px; margin-bottom:10px; align-items:center; position:sticky; top:0; background:#1e1e1e; z-index:10; padding:10px 0; border-bottom:1px solid #333;">
                 <button id="mt-play-pause" style="background:#28a745; color:white; border:none; padding:5px 15px; border-radius:4px; cursor:pointer;">▶ 播放/暂停</button>
                 <div style="display:flex; align-items:center; gap:5px; color:#ccc; font-size:12px;">
@@ -163,17 +162,18 @@ function openTaggerModal() {
             </div>
 
             <!-- 波形容器 -->
-            <div id="mt-waveform" style="width:100%; height:120px; background:#000; border-radius:4px; margin-bottom:10px; cursor:text;"></div>
+            <div id="mt-waveform" style="width:100%; height:120px; background:#000; border-radius:4px; margin-bottom:15px; cursor:text;"></div>
             
-            <!-- 歌词列表 【修改】移除内部 overflow，让父容器滚动 -->
-            <div style="background:#141414; padding:10px; border-radius:4px; border:1px solid #333; min-height: 400px; display:flex; flexDirection:column;">
+            <!-- 歌词列表容器 -->
+            <!-- 【修改】min-height 加大，且不限制 max-height，让其自然撑开父容器 -->
+            <div style="background:#141414; padding:10px; border-radius:4px; border:1px solid #333; min-height: 400px;">
                 <div id="mt-rows-container"></div>
             </div>
 
             <!-- 导出按钮 -->
-            <div style="margin-top:15px; display:flex; gap:10px; justify-content:flex-end; padding-bottom:5px;">
-                <button id="mt-download-lrc" style="background:#555; padding:8px 15px; color:white; border:none; border-radius:4px; cursor:pointer;">下载 .lrc (推荐)</button>
-                <button id="mt-download-mp3" style="background:#2b5e99; padding:8px 15px; color:white; border:none; border-radius:4px; cursor:pointer;">💾 导出内嵌 MP3</button>
+            <div style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end; padding-bottom:10px;">
+                <button id="mt-download-lrc" style="background:#555; padding:10px 20px; color:white; border:none; border-radius:4px; cursor:pointer;">下载 .lrc (推荐)</button>
+                <button id="mt-download-mp3" style="background:#2b5e99; padding:10px 20px; color:white; border:none; border-radius:4px; cursor:pointer;">💾 导出内嵌 MP3</button>
             </div>
         </div>
     `;
@@ -258,7 +258,7 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
     const WaveSurfer = window.WaveSurfer;
     const RegionsPlugin = window.WaveSurfer.Regions;
 
-    // 创建波形实例
+    // 1. 创建波形实例
     const ws = WaveSurfer.create({
         container: '#mt-waveform',
         waveColor: '#4F4A85',
@@ -274,6 +274,7 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         backend: 'WebAudio'
     });
 
+    // 2. 注册插件
     const wsRegions = ws.registerPlugin(RegionsPlugin.create());
     
     window.mtWaveSurfer = ws;
@@ -290,7 +291,6 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
             const text = userLines[index] || seg.text.trim();
             const color = (index % 2 === 0) ? "rgba(0, 123, 255, 0.2)" : "rgba(40, 167, 69, 0.2)";
 
-            // Region 配置：禁止拖动整体
             const region = wsRegions.addRegion({
                 id: `seg-${index}`,
                 start: seg.start,
@@ -298,7 +298,7 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
                 content: `<div style="color:#fff; font-size:10px; padding:2px; overflow:hidden; white-space:nowrap; pointer-events:none;">${text}</div>`,
                 color: color,
                 drag: false,   // 禁止拖动整体
-                resize: true,  // 允许拖动两端
+                resize: true,  // 允许拖动边缘
             });
 
             const row = document.createElement('div');
@@ -310,15 +310,14 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
                 <span class="mt-time-disp" style="font-family:monospace; color:#aaa; font-size:13px; min-width:90px; text-align:right;">${formatTime(seg.start)}</span>
             `;
             
-            // 联动：改文字
             row.querySelector('input').addEventListener('input', (e) => {
                 const newText = e.target.value;
                 region.setOptions({ content: `<div style="color:#fff; font-size:10px; padding:2px; overflow:hidden; white-space:nowrap; pointer-events:none;">${newText}</div>` });
             });
-            // 联动：点击行
             row.onclick = (e) => {
                 if(e.target.tagName !== 'INPUT') {
                     ws.setTime(region.start);
+                    // scrollIntoView 可能需要改为 nearest，防止在全屏滚动时跳动过大
                     row.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 }
             };
@@ -326,19 +325,17 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         });
     });
 
-    // 点击波形播放逻辑
     wsRegions.on('region-clicked', (region, e) => {
-        e.stopPropagation();
+        e.stopPropagation(); 
         const row = document.getElementById(`row-${region.id}`);
         if(row) {
             document.querySelectorAll('#mt-rows-container > div').forEach(d => d.style.background = '#222');
             row.style.background = '#334455';
-            // 不自动滚动 row，防止打断用户对波形的操作
+            row.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
         region.play(); 
     });
 
-    // 拖拽联动
     wsRegions.on('region-updated', (region) => {
         const row = document.getElementById(`row-${region.id}`);
         if (row) {
