@@ -37,34 +37,37 @@ async function loadLibraries() {
     }
 }
 
-// --- 2. 弹窗 UI (屏幕中央 + 内部滚动) ---
+// --- 2. 弹窗 UI (强制居中定位) ---
 function createCustomPopup(htmlContent) {
     const old = document.getElementById('mt-custom-overlay');
     if (old) old.remove();
 
+    // 背景遮罩
     const overlay = document.createElement('div');
     overlay.id = 'mt-custom-overlay';
     Object.assign(overlay.style, {
-        position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+        position: 'fixed', top: '0', left: '0', 
+        width: '100vw', height: '100vh',
         backgroundColor: 'rgba(0, 0, 0, 0.85)',
-        zIndex: 20000,
-        // 【核心】Flex 居中
-        display: 'flex', justifyContent: 'center', alignItems: 'center',
-        backdropFilter: 'blur(5px)'
+        zIndex: '2147483640', // 极高层级
+        backdropFilter: 'blur(3px)'
     });
 
+    // 弹窗本体 (使用 transform 强制居中)
     const container = document.createElement('div');
     container.className = 'mt-modal';
     Object.assign(container.style, {
-        position: 'relative', 
-        width: '1000px', maxWidth: '95%', 
-        height: '85vh', // 固定高度，确保在屏幕中间
+        position: 'fixed', 
+        top: '50%', left: '50%', 
+        transform: 'translate(-50%, -50%)', // 核心：强制居中
+        width: '1000px', maxWidth: '90vw', 
+        height: '80vh', // 稍微减小高度，防止撑破屏幕
         backgroundColor: '#1e1e1e', border: '1px solid #333', color: '#eee',
         borderRadius: '12px', padding: '20px', 
-        boxShadow: '0 10px 40px rgba(0,0,0,0.8)',
-        // 【核心】Flex 布局，让内部元素可以自适应高度
+        boxShadow: '0 0 50px rgba(0,0,0,0.9)',
+        zIndex: '2147483647', // 确保在遮罩之上
         display: 'flex', flexDirection: 'column', gap: '10px',
-        overflow: 'hidden' // 容器本身不滚动，内部 specific 区域滚动
+        overflow: 'hidden' 
     });
 
     const closeBtn = document.createElement('div');
@@ -79,14 +82,14 @@ function createCustomPopup(htmlContent) {
     };
 
     container.innerHTML = htmlContent;
-    container.appendChild(closeBtn);
-    overlay.appendChild(container);
+    overlay.appendChild(container); // 这里实际上是为了关闭点击事件，为了层级也可以直接 append 到 body
+    // 但为了结构清晰，我们把 modal 放在 overlay 里，但 modal 使用 fixed 定位跳出 overlay 的流
     document.body.appendChild(overlay);
 }
 
 // --- 3. 插件入口 ---
 jQuery(async () => {
-    console.log("🎵 Music Tagger Loaded (Fixed UI)");
+    console.log("🎵 Music Tagger Loaded (Center Fix)");
     setTimeout(addMusicTaggerButton, 1000);
 });
 
@@ -115,7 +118,7 @@ function openTaggerModal() {
     
     const html = `
         <h3 style="margin:0; border-bottom:1px solid #444; padding-bottom:10px; color:#fff; flex-shrink: 0;">
-            🎵 智能歌词剪辑台 <span style="font-size:12px; color:#aaa; font-weight:normal;">v3.0</span>
+            🎵 智能歌词剪辑台 <span style="font-size:12px; color:#aaa; font-weight:normal;">v3.1</span>
         </h3>
         
         <!-- 顶部设置区 (AI 分析前显示) -->
@@ -162,7 +165,6 @@ function openTaggerModal() {
             </div>
             
             <!-- 2. 中间滚动区：歌词列表 (独立滚动) -->
-            <!-- 【核心修复】设置 overflow-y:auto 让这里可以独立上下滑动 -->
             <div style="flex:1; overflow-y:auto; background:#141414; padding:5px; border-radius:4px; border:1px solid #333; margin-bottom:10px;">
                 <div id="mt-rows-container"></div>
             </div>
@@ -265,7 +267,6 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         cursorWidth: 2,
         normalize: true,
         backend: 'WebAudio',
-        // 关键：优化滚动性能
         minPxPerSec: 50, 
     });
 
@@ -279,32 +280,29 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
     container.innerHTML = "";
 
     ws.on('ready', () => {
-        // 初始化时不缩放太大，防止卡顿
         ws.zoom(50);
         
         segments.forEach((seg, index) => {
             const text = userLines[index] || seg.text.trim();
             const color = (index % 2 === 0) ? "rgba(0, 123, 255, 0.2)" : "rgba(40, 167, 69, 0.2)";
 
-            // 【核心修复】使用 DOM 元素作为 content，解决“爆代码”问题
             const labelEl = document.createElement('div');
             Object.assign(labelEl.style, {
                 color: '#fff', fontSize: '10px', padding: '2px', 
                 whiteSpace: 'nowrap', overflow: 'hidden', pointerEvents: 'none'
             });
-            labelEl.textContent = text; // 安全赋值文本
+            labelEl.textContent = text; 
 
             const region = wsRegions.addRegion({
                 id: `seg-${index}`,
                 start: seg.start,
                 end: seg.end,
-                content: labelEl, // 传入 DOM 元素
+                content: labelEl,
                 color: color,
-                drag: false,   // 禁止整体拖动
-                resize: true,  // 允许边缘拖动
+                drag: false,   
+                resize: true,  
             });
 
-            // 创建列表行
             const row = document.createElement('div');
             row.id = `row-${region.id}`;
             row.style.cssText = "display:flex; gap:10px; margin-bottom:5px; align-items:center; background:#222; padding:8px; border-radius:4px;";
@@ -314,17 +312,15 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
                 <span class="mt-time-disp" style="font-family:monospace; color:#aaa; font-size:12px; min-width:80px; text-align:right;">${formatTime(seg.start)}</span>
             `;
             
-            // 联动：修改文本
             row.querySelector('input').addEventListener('input', (e) => {
                 const newText = e.target.value;
-                labelEl.textContent = newText; // 直接更新 DOM 节点的文本
+                labelEl.textContent = newText;
             });
             
-            // 【核心修复】点击行：只跳转播放头，不自动滚动列表，避免“跳动”
+            // 点击行：只跳转播放头，不自动滚动列表
             row.onclick = (e) => {
                 if(e.target.tagName !== 'INPUT') {
                     ws.setTime(region.start);
-                    // 高亮
                     document.querySelectorAll('#mt-rows-container > div').forEach(d => d.style.background = '#222');
                     row.style.background = '#334455';
                 }
@@ -333,7 +329,7 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         });
     });
 
-    // 【核心修复】点击波形：播放，高亮行，但禁止 scrollIntoView
+    // 点击波形：播放，高亮行，不滚动
     wsRegions.on('region-clicked', (region, e) => {
         e.stopPropagation(); 
         region.play();
@@ -341,12 +337,9 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         if(row) {
             document.querySelectorAll('#mt-rows-container > div').forEach(d => d.style.background = '#222');
             row.style.background = '#334455';
-            // 注释掉自动滚动，满足需求“不要跳转到下面的时间戳”
-            // row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
     });
 
-    // 拖拽更新时间
     wsRegions.on('region-updated', (region) => {
         const row = document.getElementById(`row-${region.id}`);
         if (row) {
