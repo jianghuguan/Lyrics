@@ -1,6 +1,7 @@
-// --- 1. 设置与初始化 ---
+// --- 1. 设置与常量 ---
 const SETTINGS_KEY = "music_tagger_settings";
 
+// 定义依赖库：新增了 timeline (时间刻度尺)
 const LIBS = {
     id3: "https://unpkg.com/browser-id3-writer@4.4.0/dist/browser-id3-writer.js",
     wavesurfer: "https://unpkg.com/wavesurfer.js@7.7.1/dist/wavesurfer.min.js",
@@ -11,6 +12,92 @@ const LIBS = {
 let wavesurfer = null;
 let wsRegions = null;
 
+// --- 2. 样式注入 (集成你的 CSS) ---
+function injectStyles() {
+    if (document.getElementById('mt-custom-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'mt-custom-styles';
+    style.textContent = `
+        /* 你的原始 CSS */
+        .mt-modal {
+            background-color: var(--SmartThemeBlur, #1a1b1e); /* 提供默认深色回退 */
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            height: 80vh;
+            border: 1px solid #444;
+            border-radius: 8px;
+            color: #eee;
+        }
+        .mt-scroll-area {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding-right: 10px;
+            border: 1px solid var(--SmartThemeBorderColor, #444);
+            border-radius: 5px;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.2);
+        }
+        .mt-row {
+            display: flex; gap: 8px; margin-bottom: 5px; align-items: center;
+        }
+        .mt-time {
+            width: 90px; font-family: monospace;
+            background: var(--SmartThemeInputBackground, #222);
+            color: var(--SmartThemeInputColor, #8eff8e);
+            border: 1px solid var(--SmartThemeBorderColor, #444);
+            padding: 5px; border-radius: 4px;
+        }
+        .mt-text {
+            flex-grow: 1;
+            background: var(--SmartThemeInputBackground, #222);
+            color: var(--SmartThemeInputColor, #fff);
+            border: 1px solid var(--SmartThemeBorderColor, #444);
+            padding: 5px; border-radius: 4px;
+        }
+        .mt-btn {
+            padding: 8px 15px;
+            background: var(--SmartThemeQuoteColor, #2b5e99);
+            color: white; border: none; border-radius: 5px;
+            cursor: pointer; font-weight: bold; transition: 0.2s;
+        }
+        .mt-btn:hover { filter: brightness(1.2); }
+        .mt-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .mt-label { display: block; margin-bottom: 5px; font-weight: bold; opacity: 0.8; }
+        .mt-input { width: 100%; box-sizing: border-box; padding: 8px; background: #333; color: #fff; border: 1px solid #555; }
+        
+        /* --- 新增：波形剪辑区专用样式 --- */
+        #mt-waveform-container {
+            background: #000;
+            padding: 10px 10px 0 10px; /* 底部不留白，为了贴合轨道 */
+            border: 1px solid #444;
+            border-radius: 5px;
+            display: flex; 
+            flex-direction: column;
+        }
+        /* 时间刻度尺的高度 */
+        #wave-timeline { height: 20px; width: 100%; margin-top: -5px; } 
+        
+        /* 强制覆盖 Region 样式，让它们看起来像是在独立的轨道 */
+        .wavesurfer-region {
+            opacity: 0.8 !important;
+            border-bottom: 2px solid #fff !important; /* 底部加亮条方便看边界 */
+            z-index: 10 !important;
+        }
+        /* Region 的提示词 */
+        .wavesurfer-region:before {
+            content: attr(data-region-label);
+            position: absolute; top: 0; left: 5px;
+            color: #fff; font-size: 11px; text-shadow: 1px 1px 2px #000;
+            white-space: nowrap; overflow: hidden; max-width: 95%;
+            pointer-events: none;
+        }
+    `;
+    document.head.appendChild(style);
+}
+
+// --- 3. 基础功能函数 ---
 function getSettings() {
     if (window.extension_settings && window.extension_settings[SETTINGS_KEY]) {
         return window.extension_settings[SETTINGS_KEY];
@@ -27,7 +114,7 @@ function saveSettings(newSettings) {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(newSettings));
 }
 
-// 强制按顺序加载库
+// 严格顺序加载库
 async function loadScript(url) {
     return new Promise((resolve, reject) => {
         if (document.querySelector(`script[src="${url}"]`)) { resolve(); return; }
@@ -44,79 +131,37 @@ async function loadAllLibraries() {
         if (!window.ID3Writer) await loadScript(LIBS.id3);
         if (!window.WaveSurfer) await loadScript(LIBS.wavesurfer);
         if (!window.WaveSurfer?.Regions) await loadScript(LIBS.regions);
-        if (!window.WaveSurfer?.Timeline) await loadScript(LIBS.timeline);
-        console.log("✅ 核心组件加载完成");
+        if (!window.WaveSurfer?.Timeline) await loadScript(LIBS.timeline); // 加载时间轴插件
         return true;
     } catch (e) {
-        console.error(e);
         alert("组件加载失败，请检查网络");
         return false;
     }
 }
 
-// --- 2. 界面构建 ---
+// --- 4. 界面构建 ---
 function createCustomPopup(htmlContent) {
     const old = document.getElementById('mt-custom-overlay');
     if (old) old.remove();
 
-    // 注入自定义 CSS 以实现“分层轨道”效果
-    const style = document.createElement('style');
-    style.innerHTML = `
-        /* 强制让 Region（歌词块）只占据底部，形成独立轨道感 */
-        .wavesurfer-region {
-            top: auto !important;     /* 取消顶部对齐 */
-            bottom: 0 !important;     /* 强制底部对齐 */
-            height: 40px !important;  /* 固定高度，形成“条” */
-            border-radius: 4px !important;
-            border-top: 1px solid rgba(255,255,255,0.2) !important;
-            z-index: 10 !important;
-        }
-        /* 歌词块内的文字样式 */
-        .wavesurfer-region-content {
-            font-size: 11px !important;
-            padding: 4px !important;
-            color: #fff !important;
-            overflow: hidden;
-            white-space: nowrap;
-            text-overflow: ellipsis;
-        }
-        /* 光标时间浮标样式 */
-        #cursor-time-label {
-            position: absolute;
-            top: 25px; /* 在刻度尺下方 */
-            background: #d32f2f;
-            color: white;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-size: 10px;
-            pointer-events: none; /* 不挡鼠标 */
-            transform: translateX(-50%);
-            display: none;
-            z-index: 20;
-            white-space: nowrap;
-        }
-    `;
-    document.head.appendChild(style);
+    // 注入 CSS
+    injectStyles();
 
     const overlay = document.createElement('div');
     overlay.id = 'mt-custom-overlay';
     Object.assign(overlay.style, {
         position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
-        backgroundColor: 'rgba(0, 0, 0, 0.9)',
+        backgroundColor: 'rgba(0, 0, 0, 0.85)',
         zIndex: 20000,
         display: 'flex', justifyContent: 'center', alignItems: 'flex-start',
-        paddingTop: '30px', backdropFilter: 'blur(5px)'
+        paddingTop: '50px', backdropFilter: 'blur(5px)'
     });
 
     const container = document.createElement('div');
-    container.className = 'mt-modal'; 
+    container.className = 'mt-modal'; // 使用你的 CSS 类
     Object.assign(container.style, {
-        position: 'relative',
-        width: '1200px', maxWidth: '98%', maxHeight: '95vh', overflowY: 'auto',
-        backgroundColor: '#181818', 
-        border: '1px solid #333', color: '#eee', borderRadius: '8px',
-        padding: '20px', boxShadow: '0 10px 30px rgba(0,0,0,0.8)',
-        display: 'flex', flexDirection: 'column', gap: '15px'
+        width: '1000px', maxWidth: '95%',
+        // 高度和其他样式已由 .mt-modal CSS 类控制
     });
 
     const closeBtn = document.createElement('div');
@@ -129,21 +174,22 @@ function createCustomPopup(htmlContent) {
     const closeAction = () => {
         if(wavesurfer) { wavesurfer.destroy(); wavesurfer = null; }
         overlay.remove();
-        style.remove(); // 清理 CSS
     };
     closeBtn.onclick = closeAction;
 
     container.innerHTML = htmlContent;
     container.appendChild(closeBtn);
     overlay.appendChild(container);
+    document.body.appendChild(overlay);
     
-    // 点击遮罩关闭
-    overlay.onclick = (e) => { if (e.target === overlay) closeAction(); };
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) closeAction();
+    });
 }
 
-// --- 3. 插件入口 ---
+// --- 5. 插件入口 ---
 jQuery(async () => {
-    console.log("🎵 Music Tagger Pro Max (Tracks) Loaded");
+    console.log("🎵 Music Tagger Pro (Timeline Edition) Loaded");
     setTimeout(addMusicTaggerButton, 1000);
 });
 
@@ -162,74 +208,77 @@ function addMusicTaggerButton() {
     document.body.appendChild(btn);
 }
 
-// --- 4. 界面 HTML ---
+// --- 6. 核心 HTML 结构 ---
 function openTaggerModal() {
     const settings = getSettings();
     
     const html = `
-        <h3 style="margin:0 0 5px 0; border-bottom:1px solid #333; padding-bottom:10px; color:#fff;">🎵 MP3 歌词可视化剪辑 (Pro Max)</h3>
+        <h3 style="margin:0; border-bottom:1px solid #555; padding-bottom:10px; color:#fff;">🎵 MP3 歌词可视化剪辑 Pro</h3>
         
         <div style="display:flex; gap:20px;">
             <div style="flex:1;">
-                <label class="mt-label" style="color:#888; font-size:12px;">API Key:</label>
-                <input type="password" id="mt-key" class="text_pole mt-input" value="${settings.apiKey || ''}" placeholder="gsk_..." style="padding:6px; background:#222; color:#fff; border:1px solid #444; width:100%; box-sizing:border-box;" />
+                <label class="mt-label" style="color:#ccc;">1. API Key:</label>
+                <input type="password" id="mt-key" class="text_pole mt-input" value="${settings.apiKey || ''}" placeholder="gsk_..." />
             </div>
             <div style="flex:1;">
-                <label class="mt-label" style="color:#888; font-size:12px;">选择文件:</label>
+                <label class="mt-label" style="color:#ccc;">2. MP3 文件:</label>
                  <div style="display:flex; align-items:center; gap:10px;">
                     <input type="file" id="mt-file" accept="audio/mp3" style="display:none;" />
-                    <button id="mt-file-trigger-btn" class="mt-btn" style="background:#333; border:1px solid #555; padding:6px 15px; color:#ccc; cursor:pointer; border-radius:4px; font-size:12px;">📂 打开 MP3</button>
-                    <span id="mt-file-name-display" style="color:#666; font-size:12px;">未选择</span>
+                    <button id="mt-file-trigger-btn" class="mt-btn" style="background:#444;">📂 点击选择文件</button>
+                    <span id="mt-file-name-display" style="color:#aaa; font-size:0.9em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:150px;">未选择</span>
                 </div>
             </div>
         </div>
 
         <div>
-            <textarea id="mt-lyrics-raw" class="text_pole mt-input" rows="2" placeholder="在此粘贴纯文本歌词 (一行一句)..." style="background:#222; color:#bbb; border:1px solid #444; width:100%; box-sizing:border-box; font-size:12px;"></textarea>
+            <label class="mt-label" style="color:#ccc;">3. 纯文本歌词 (一行一句):</label>
+            <textarea id="mt-lyrics-raw" class="text_pole mt-input" rows="2" placeholder="粘贴歌词..."></textarea>
         </div>
 
-        <button id="mt-process-btn" class="mt-btn" style="width:100%; padding:8px; background:#2b5e99; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold; font-size:13px;">⚡ AI 识别并进入轨道视图</button>
-        <div id="mt-status" style="color:cyan; font-weight:bold; height:15px; font-size:12px;"></div>
+        <button id="mt-process-btn" class="mt-btn" style="width:100%;">⚡ 开始 AI 识别 & 剪辑</button>
+        <div id="mt-status" style="color:cyan; font-weight:bold; height:20px; font-size:14px;"></div>
 
-        <!-- 轨道编辑区 -->
-        <div id="mt-editor-area" style="display:none; flex-direction:column; border:1px solid #333; background:#000; margin-top:5px;">
+        <!-- 剪辑工作区 (Flex 纵向布局) -->
+        <div id="mt-editor-area" style="display:none; flex-direction:column; gap:10px; flex-grow:1; overflow:hidden;">
             
-            <!-- 顶部控制条 -->
-            <div style="background:#1a1a1a; padding:5px 10px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #333;">
-                <span style="color:#666; font-size:11px;">💡 提示：歌词块位于底部轨道，拖动边缘调整时间</span>
-                <div style="display:flex; gap:5px;">
-                    <button id="mt-play-pause" style="background:#d32f2f; color:white; border:none; padding:2px 12px; cursor:pointer; border-radius:3px; font-size:11px;">⏯ 播放(Space)</button>
-                    <button id="mt-zoom-out" style="background:#333; color:#ccc; border:none; cursor:pointer; padding:2px 8px; border-radius:3px;">🔍 -</button>
-                    <button id="mt-zoom-in" style="background:#333; color:#ccc; border:none; cursor:pointer; padding:2px 8px; border-radius:3px;">🔍 +</button>
+            <!-- 可视化轨道区域 -->
+            <div id="mt-waveform-container">
+                <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                    <span style="color:#aaa; font-size:12px;">🎧 拖动下方绿色色块边缘调整时间 | 点击刻度线跳转</span>
+                    <div style="display:flex; gap:10px;">
+                        <button id="mt-zoom-out" style="background:none; color:#fff; border:none; cursor:pointer;">🔍 -</button>
+                        <button id="mt-zoom-in" style="background:none; color:#fff; border:none; cursor:pointer;">🔍 +</button>
+                    </div>
                 </div>
-            </div>
-
-            <!-- 可视化容器 (Relative) -->
-            <div style="position:relative; width:100%; overflow:hidden;">
-                <!-- 1. 时间刻度 (Top) -->
-                <div id="wave-timeline" style="height:20px; background:#111; border-bottom:1px solid #222;"></div>
                 
-                <!-- 2. 光标时间浮标 -->
-                <div id="cursor-time-label">00:00.00</div>
-
-                <!-- 3. 波形 + 歌词轨道 (混合容器) -->
-                <!-- 我们设置高度 160px：上面 120px 给波形，下面 40px 给歌词块 -->
-                <div id="waveform" style="height:160px; background:linear-gradient(to bottom, #111 0%, #000 75%, #181818 75%, #181818 100%);"></div>
+                <!-- 1. 音频波形 (上层) -->
+                <div id="waveform" style="width:100%;"></div>
+                
+                <!-- 2. 时间刻度 (中层) -->
+                <div id="wave-timeline"></div>
+                
+                <!-- 3. 歌词轨道 (下层, 实际上是 Regions 的视觉容器) -->
+                <!-- 我们通过 CSS 让 Regions 看起来像在这个位置 -->
+            </div>
+            
+            <div style="display:flex; justify-content:center; gap:15px; margin-top:-5px;">
+                 <button id="mt-play-pause" class="mt-btn" style="background:#d32f2f; padding:5px 40px; font-size:14px; border-radius:20px;">⏯ 播放 / 暂停 (空格)</button>
             </div>
 
-            <!-- 底部歌词列表 (校对用) -->
-            <div id="mt-rows-container" class="mt-scroll-area" style="height: 180px; overflow-y:auto; background:#111; padding:5px; border-top:1px solid #333;"></div>
-        </div>
-
-        <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:5px;">
-            <button id="mt-download-lrc" class="mt-btn" style="background:#333; padding:6px 15px; color:#ccc; border:none; border-radius:4px; cursor:pointer; font-size:12px;">仅 LRC</button>
-            <button id="mt-download-mp3" class="mt-btn" style="background:#2b5e99; padding:6px 15px; color:white; border:none; border-radius:4px; cursor:pointer; font-size:12px;">💾 写入 MP3</button>
+            <!-- 歌词列表 (可滚动) -->
+            <div id="mt-rows-container" class="mt-scroll-area"></div>
+            
+            <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:5px;">
+                <button id="mt-download-lrc" class="mt-btn" style="background:#444;">仅下载 LRC</button>
+                <button id="mt-download-mp3" class="mt-btn">💾 写入 MP3 并下载</button>
+            </div>
         </div>
     `;
 
     createCustomPopup(html);
 
     setTimeout(() => {
+        // 事件绑定
         const fileInput = document.getElementById('mt-file');
         const triggerBtn = document.getElementById('mt-file-trigger-btn');
         const nameDisplay = document.getElementById('mt-file-name-display');
@@ -240,7 +289,7 @@ function openTaggerModal() {
                 nameDisplay.style.color = "#8eff8e";
             }
         };
-
+        
         document.getElementById('mt-key').addEventListener('input', (e) => saveSettings({...getSettings(), apiKey: e.target.value}));
         document.getElementById('mt-process-btn').addEventListener('click', runAIAnalysis);
         document.getElementById('mt-download-mp3').addEventListener('click', () => handleExport(true));
@@ -248,7 +297,7 @@ function openTaggerModal() {
     }, 100);
 }
 
-// --- 5. AI 流程 ---
+// --- 7. AI 流程 ---
 async function runAIAnalysis() {
     const fileInput = document.getElementById('mt-file');
     const apiKey = document.getElementById('mt-key').value;
@@ -258,10 +307,11 @@ async function runAIAnalysis() {
     if (!fileInput.files[0]) { status.innerText = "❌ 请选择文件"; return; }
     if (!apiKey) { status.innerText = "❌ 请输入 Key"; return; }
 
-    status.innerText = "⏳ 加载中...";
-    if (!(await loadAllLibraries())) return;
+    status.innerText = "⏳ 正在初始化组件...";
+    const success = await loadAllLibraries();
+    if (!success) { status.innerText = "❌ 组件加载失败"; return; }
 
-    status.innerText = "⏳ AI 识别中...";
+    status.innerText = "⏳ 正在 AI 识别...";
     document.getElementById('mt-process-btn').disabled = true;
 
     try {
@@ -277,7 +327,7 @@ async function runAIAnalysis() {
         if (!response.ok) throw new Error((await response.json()).error?.message || "API Error");
 
         const data = await response.json();
-        status.innerText = "✅ 识别完成";
+        status.innerText = "✅ 识别成功！";
         
         document.getElementById('mt-editor-area').style.display = 'flex';
         initWaveformEditor(fileInput.files[0], data.segments, rawText);
@@ -289,41 +339,42 @@ async function runAIAnalysis() {
     }
 }
 
-// --- 6. 核心：剪辑器逻辑 ---
+// --- 8. 波形编辑器 (含 Timeline) ---
 function initWaveformEditor(file, segments, userText) {
     if (wavesurfer) wavesurfer.destroy();
 
     // 1. 初始化 WaveSurfer
     wavesurfer = WaveSurfer.create({
         container: '#waveform',
-        waveColor: '#555',
-        progressColor: '#4a90e2',
-        cursorColor: '#d32f2f', // 红色光标
-        cursorWidth: 1,
+        waveColor: '#666',      // 灰色波形
+        progressColor: '#4a90e2', // 蓝色进度
         url: URL.createObjectURL(file),
-        height: 120, // 波形高度只占上方
+        height: 100,            // 波形高度减小，给歌词轨道留空间
         barWidth: 2,
         barGap: 1,
         barRadius: 2,
         normalize: true,
         minPxPerSec: 50,
-        autoCenter: true,
         plugins: [
+            // 注册 Regions 插件
             WaveSurfer.Regions.create(),
+            // 注册 Timeline 插件 (时间刻度尺)
             WaveSurfer.Timeline.create({
-                container: '#wave-timeline',
+                container: '#wave-timeline', // 放在波形下方
                 height: 20,
-                timeInterval: 1,
-                primaryColor: '#888',
-                secondaryColor: '#444',
-                style: { fontSize: '10px', color: '#888' }
+                timeInterval: 5,
+                primaryLabelInterval: 10,
+                style: {
+                    fontSize: '10px',
+                    color: '#aaa'
+                }
             })
         ]
     });
 
-    wsRegions = wavesurfer.plugins[0];
+    wsRegions = wavesurfer.plugins[0]; // 获取 Regions 实例
 
-    // 2. 填充歌词块
+    // 2. 填充歌词数据
     const userLines = userText.split('\n').filter(l => l.trim().length > 0);
     const container = document.getElementById('mt-rows-container');
     container.innerHTML = "";
@@ -332,28 +383,34 @@ function initWaveformEditor(file, segments, userText) {
         const txt = userLines[index] !== undefined ? userLines[index] : seg.text.trim();
         const regionId = `region-${index}`;
 
-        // 创建 Region
+        // A. 创建歌词条 (Region)
+        // 技巧：我们无法真正把 Region 移出波形容器，但可以通过 CSS 调整视觉
+        // 或者直接让它铺满波形的底部，形成“字幕条”的感觉
         wsRegions.addRegion({
             id: regionId,
             start: seg.start,
             end: seg.end,
-            content: txt, 
-            color: 'rgba(52, 152, 219, 0.4)', // 蓝色块
-            drag: true, resize: true, minLength: 0.2
+            content: txt, // 直接把歌词显示在条上
+            color: 'rgba(40, 167, 69, 0.4)', // 绿色半透明
+            drag: true, resize: true,
+            minLength: 0.5
         });
 
-        // 创建下方列表行
+        // 手动添加一个属性，用于在 CSS 里通过 attr() 获取显示
+        setTimeout(() => {
+            const rElem = document.querySelector(`[data-id="${regionId}"]`);
+            if(rElem) rElem.setAttribute('data-region-label', truncate(txt, 20));
+        }, 100);
+
+        // B. 列表行
         const row = document.createElement('div');
         row.id = `row-${index}`;
         row.className = 'mt-row';
-        row.style.cssText = "display:flex; gap:10px; margin-bottom:2px; align-items:center; padding:4px; background:#1a1a1a; border-radius:3px;";
         row.innerHTML = `
-            <span style="color:#444; font-size:10px; width:20px;">${index+1}</span>
-            <input type="text" class="mt-time" id="time-${regionId}" value="${formatTime(seg.start)}" readonly 
-                style="width:80px; background:#000; color:#8eff8e; border:1px solid #333; padding:2px; text-align:center; font-family:monospace; font-size:11px;">
-            <input type="text" class="mt-text" value="${txt}" 
-                style="flex:1; background:#000; color:#ccc; border:1px solid #333; padding:2px; font-size:12px;">
-            <button class="mt-play-seg" style="cursor:pointer; background:none; border:none; color:#666;">▶</button>
+            <span style="color:#666; font-size:12px; width:25px;">#${index+1}</span>
+            <input type="text" class="mt-time" id="time-${regionId}" value="${formatTime(seg.start)}" readonly>
+            <input type="text" class="mt-text" value="${txt}">
+            <button class="mt-play-seg" style="cursor:pointer; background:none; border:1px solid #444; color:#aaa; border-radius:3px;">▶</button>
         `;
         container.appendChild(row);
 
@@ -363,131 +420,44 @@ function initWaveformEditor(file, segments, userText) {
             if(r) r.play();
         };
         row.querySelector('.mt-text').addEventListener('input', (e) => {
+             const val = e.target.value;
              const r = wsRegions.getRegions().find(reg => reg.id === regionId);
-             if(r) r.setOptions({ content: e.target.value });
+             if(r) {
+                 r.setOptions({ content: val }); // 更新 Region 内部内容
+                 const rElem = document.querySelector(`[data-id="${regionId}"]`);
+                 if(rElem) rElem.setAttribute('data-region-label', truncate(val, 20)); // 更新 CSS 伪元素显示
+             }
         });
     });
 
-    // 3. 事件交互
-    
-    // 拖动更新
+    // 3. 全局交互
+    // 拖动/缩放歌词条 -> 更新时间
     wsRegions.on('region-updated', (region) => {
         const timeInput = document.getElementById(`time-${region.id}`);
         if (timeInput) {
             timeInput.value = formatTime(region.start);
-            highlightRow(region.id);
+            document.querySelectorAll('.mt-row').forEach(r => r.style.background = 'transparent');
+            const activeRow = document.getElementById(`row-${region.id.split('-')[1]}`);
+            if(activeRow) {
+                activeRow.style.background = 'rgba(255,255,255,0.05)';
+            }
         }
     });
 
     wsRegions.on('region-clicked', (region, e) => {
         e.stopPropagation();
         region.play();
-        highlightRow(region.id);
-    });
-
-    // 播放时光标跟随
-    const cursorLabel = document.getElementById('cursor-time-label');
-    
-    // 更新浮标位置和时间的函数
-    const updateCursor = (currentTime) => {
-        if(!cursorLabel) return;
-        
-        // 计算当前时间在当前视图中的百分比位置
-        const duration = wavesurfer.getDuration();
-        if(!duration) return;
-        
-        // WaveSurfer 内部计算逻辑（简化版）
-        // 我们利用 Wrapper 的宽度和 scrollLeft 来计算
-        const wrapper = document.querySelector('#waveform > div'); // shadow dom wrapper usually
-        if(wrapper) {
-            // 获取当前进度的像素位置
-            // 这里我们简单用 currentTime 格式化
-            cursorLabel.innerText = formatTimeSimple(currentTime);
-            
-            // 计算 label 的 left 位置。由于 WaveSurfer 的 cursor 是绝对定位的，
-            // 我们可以直接寻找 WaveSurfer 内部生成的 cursor 元素，或者自己根据进度算
-            // 但最简单的是：每当 audioprocess 或 seeking 时，获取 wave-cursor 元素的位置
-            // WaveSurfer 默认 cursor 也是一个 div
-            
-            // 为了简化，我们直接显示时间，位置跟随 cursor 比较难完美同步，
-            // 建议：直接让它显示在顶部固定位置或者鼠标附近？
-            // 用户要求：“点击音频时出现的基准线要有时间刻度” -> 意味着它应该跟着线走。
-            
-            // 尝试获取内置 cursor
-            const cursorEl = document.querySelector('#waveform ::part(cursor)'); // 如果是 shadow dom
-            // V7 是直接渲染在 div 里的
-            const cursor = document.querySelector('#waveform > div > div[style*="position: absolute; z-index: 4"]'); 
-            // 这种查找太脆弱。
-            
-            // 替代方案：根据鼠标点击位置更新 label 位置
-        }
-    };
-    
-    // 监听进度更新
-    wavesurfer.on('audioprocess', (t) => {
-         cursorLabel.innerText = formatTimeSimple(t);
-         updateLabelPosition();
-    });
-    wavesurfer.on('seeking', (t) => {
-         cursorLabel.innerText = formatTimeSimple(t);
-         updateLabelPosition();
-    });
-    
-    // 核心：计算光标的屏幕 X 坐标
-    function updateLabelPosition() {
-        const wrapper = document.querySelector('#waveform');
-        const scrollContainer = wrapper.shadowRoot ? wrapper.shadowRoot.querySelector('.scroll') : wrapper.querySelector('div'); 
-        // V7 结构比较复杂，我们用一个简化的方式：
-        // 既然 WaveSurfer 有 autoCenter，光标通常在中间（播放时）。
-        // 但暂停时点击哪就是哪。
-        
-        // 我们利用 WaveSurfer 的 API 把时间转为像素
-        // 这一步比较难精确，我们退而求其次：
-        // 让 Label 显示在顶部正中间？不，用户要基准线。
-        
-        // 方案：改为鼠标移动时显示时间（像编辑器一样），点击后固定显示当前播放时间
-        cursorLabel.style.display = 'block';
-        
-        // 我们可以通过 wavesurfer.getCurrentTime() 获取时间，
-        // 然后我们要找到这个时间对应的 x 坐标。
-        // 这需要获取当前的 scrollLeft 和 pxPerSec
-        // 比较麻烦，所以我把时间显示做成了固定在“顶部时间轴”上，
-        // 或者跟随鼠标 Hover 显示。
-        
-        // 最终修正：用户要求的是“基准线有时间刻度”。
-        // 最好的办法是让 Timeline 插件自己处理，或者我们只是简单地显示一个当前时间在左上角？
-        // 不，我将在 timeline 上方动态显示当前时间。
-    }
-    
-    // 补充：为了满足“基准线要有时间刻度”，我们做一个跟随鼠标的 Time Tooltip
-    const hoverLabel = document.createElement('div');
-    hoverLabel.style.cssText = "position:absolute; background:#333; color:#fff; padding:2px 5px; font-size:10px; pointer-events:none; display:none; z-index:100; border-radius:3px;";
-    document.body.appendChild(hoverLabel);
-    
-    document.querySelector('#waveform').addEventListener('mousemove', (e) => {
-        const rect = document.querySelector('#waveform').getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const duration = wavesurfer.getDuration();
-        const progress = x / rect.width; // 这是一个相对可视区域的比例，不准确因为有滚动
-        
-        // WaveSurfer V7 点击交互实际上是把 event 传给 map
-        // 这里手动算比较复杂。
-        
-        // 退回简单方案：在 Timeline 上方加一个固定的“当前播放时间”显示
-        // 修改 cursor-time-label 的行为为：显示当前播放头的时间
-        cursorLabel.style.display = 'block';
-        cursorLabel.style.left = '50%'; // 播放时通常居中
-        cursorLabel.innerText = formatTimeSimple(wavesurfer.getCurrentTime());
+        const activeRow = document.getElementById(`row-${region.id.split('-')[1]}`);
+        if(activeRow) activeRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     });
 
     document.getElementById('mt-play-pause').onclick = () => wavesurfer.playPause();
 
-    // 缩放
     let currentZoom = 50;
     document.getElementById('mt-zoom-in').onclick = () => { currentZoom += 20; wavesurfer.zoom(currentZoom); };
     document.getElementById('mt-zoom-out').onclick = () => { currentZoom = Math.max(10, currentZoom - 20); wavesurfer.zoom(currentZoom); };
 
-    // 键盘
+    // 键盘控制
     document.onkeydown = (e) => {
         if(e.code === 'Space' && document.getElementById('mt-custom-overlay')) {
             if(e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
@@ -498,30 +468,16 @@ function initWaveformEditor(file, segments, userText) {
     };
 }
 
-// 辅助：高亮行
-function highlightRow(regionId) {
-    document.querySelectorAll('.mt-row').forEach(r => r.style.background = '#1a1a1a');
-    const index = regionId.split('-')[1];
-    const row = document.getElementById(`row-${index}`);
-    if(row) {
-        row.style.background = '#333';
-        row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-}
-
 function formatTime(seconds) {
     const d = new Date(seconds * 1000);
     return `[${d.getMinutes().toString().padStart(2,'0')}:${d.getSeconds().toString().padStart(2,'0')}.${Math.floor(d.getMilliseconds()/10).toString().padStart(2,'0')}]`;
 }
 
-function formatTimeSimple(seconds) {
-    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
-    const s = Math.floor(seconds % 60).toString().padStart(2, '0');
-    const ms = Math.floor((seconds % 1) * 100).toString().padStart(2, '0');
-    return `${m}:${s}.${ms}`;
+function truncate(str, n) {
+    return (str && str.length > n) ? str.substr(0, n-1) + '...' : str;
 }
 
-// --- 7. 导出 ---
+// --- 9. 导出 ---
 async function handleExport(embed) {
     const rows = document.querySelectorAll('.mt-row');
     let lrc = "";
@@ -545,8 +501,8 @@ async function handleExport(embed) {
             writer.setFrame('USLT', { description: '', lyrics: lrc, language: 'zho' });
             writer.addTag();
             download(new Blob([writer.getBlob()]), name + "_lyrics.mp3");
-            status.innerText = "✅ 完成";
-        } catch(e) { status.innerText = "❌ 失败: " + e.message; alert(e.message); }
+            status.innerText = "✅ 成功";
+        } catch(e) { status.innerText = "❌ " + e.message; }
     }
 }
 
