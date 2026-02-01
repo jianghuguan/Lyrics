@@ -1,9 +1,9 @@
 {
     "name": "AI Music Tagger",
-    "display_name": "MP3 Lyrics Embedder",
-    "version": "1.2.0",
+    "display_name": "Groq Music Tagger",
+    "version": "1.0.0",
     "author": "User",
-    "description": "Auto align lyrics and embed into MP3.",
+    "description": "Auto embed LRC into MP3",
     "type": "extension",
     "js": "index.js",
     "css": "style.css"
