@@ -3,7 +3,6 @@ const SETTINGS_KEY = "music_tagger_settings";
 const ID3_LIB_URL = "https://unpkg.com/browser-id3-writer@4.4.0/dist/browser-id3-writer.js";
 let isLibLoaded = false;
 
-// 尝试获取设置，如果酒馆不给，就用本地存储，保证 Key 不丢
 function getSettings() {
     if (window.extension_settings && window.extension_settings[SETTINGS_KEY]) {
         return window.extension_settings[SETTINGS_KEY];
@@ -13,16 +12,13 @@ function getSettings() {
 }
 
 function saveSettings(newSettings) {
-    // 1. 存入酒馆变量 (如果存在)
     if (window.extension_settings) {
         window.extension_settings[SETTINGS_KEY] = newSettings;
         if (window.saveSettingsDebounced) window.saveSettingsDebounced();
     }
-    // 2. 存入本地存储 (双保险)
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(newSettings));
 }
 
-// 加载 ID3 库
 async function loadID3Library() {
     if (isLibLoaded || window.ID3Writer) { isLibLoaded = true; return; }
     return new Promise((resolve) => {
@@ -36,31 +32,43 @@ async function loadID3Library() {
     });
 }
 
-// --- 2. 核心：自制弹窗函数 (解决了 callPopup 报错的问题) ---
+// --- 2. 核心：样式修复后的自制弹窗 ---
 function createCustomPopup(htmlContent) {
-    // 移除旧的（如果存在）
     const old = document.getElementById('mt-custom-overlay');
     if (old) old.remove();
 
-    // 创建遮罩层
+    // 1. 遮罩层 (全屏，负责居中)
     const overlay = document.createElement('div');
     overlay.id = 'mt-custom-overlay';
     Object.assign(overlay.style, {
         position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
-        backgroundColor: 'rgba(0, 0, 0, 0.7)', zIndex: 9999,
-        display: 'flex', justifyContent: 'center', alignItems: 'center',
-        backdropFilter: 'blur(5px)' //以此增加模糊美观度
+        backgroundColor: 'rgba(0, 0, 0, 0.6)', // 黑色半透明背景
+        zIndex: 19000, // 确保在最上层
+        display: 'flex', 
+        justifyContent: 'center', // 水平居中
+        alignItems: 'center',     // 垂直居中
+        backdropFilter: 'blur(2px)'
     });
 
-    // 创建内容容器
+    // 2. 弹窗容器 (限制高度，添加实心背景)
     const container = document.createElement('div');
-    // 这里尽量复用酒馆的样式类，但也强制加上一些基本样式以防万一
-    container.className = 'mt-modal'; 
+    container.className = 'mt-modal'; // 保留 CSS 类以便应用部分样式
+    
     Object.assign(container.style, {
-        width: '800px', maxWidth: '95%', 
-        maxHeight: '90vh', overflow: 'hidden',
-        position: 'relative', borderRadius: '10px',
-        boxShadow: '0 0 20px rgba(0,0,0,0.5)'
+        position: 'relative',
+        width: '600px', 
+        maxWidth: '90%', 
+        maxHeight: '85vh',       // 最大高度为屏幕的 85%
+        overflowY: 'auto',       // 内容太多时，弹窗内部滚动，而不会超出屏幕
+        backgroundColor: '#202124', // 【修复】强制深灰色背景，防止透明
+        backgroundImage: 'var(--SmartThemeBackground)', // 尝试使用主题背景色
+        color: 'var(--SmartThemeBodyColor, #fff)',
+        borderRadius: '10px',
+        padding: '20px',
+        boxShadow: '0 5px 20px rgba(0,0,0,0.5)',
+        display: 'flex', 
+        flexDirection: 'column',
+        gap: '10px'
     });
 
     // 关闭按钮
@@ -68,18 +76,18 @@ function createCustomPopup(htmlContent) {
     closeBtn.innerHTML = '❌';
     Object.assign(closeBtn.style, {
         position: 'absolute', top: '10px', right: '15px',
-        cursor: 'pointer', fontSize: '20px', zIndex: 10001,
-        color: 'white', fontWeight: 'bold'
+        cursor: 'pointer', fontSize: '18px', zIndex: 10,
+        opacity: '0.7'
     });
+    closeBtn.onmouseover = () => closeBtn.style.opacity = '1';
+    closeBtn.onmouseout = () => closeBtn.style.opacity = '0.7';
     closeBtn.onclick = () => overlay.remove();
 
-    // 注入 HTML
     container.innerHTML = htmlContent;
-    container.appendChild(closeBtn); // 重新把关闭按钮加进去
+    container.appendChild(closeBtn);
     overlay.appendChild(container);
     document.body.appendChild(overlay);
     
-    // 点击遮罩层关闭
     overlay.addEventListener('click', (e) => {
         if (e.target === overlay) overlay.remove();
     });
@@ -87,7 +95,7 @@ function createCustomPopup(htmlContent) {
 
 // --- 3. 插件入口 ---
 jQuery(async () => {
-    console.log("🎵 Music Tagger Loaded (Standalone Mode)");
+    console.log("🎵 Music Tagger Loaded (Fixed Style)");
     setTimeout(addMusicTaggerButton, 1000);
 });
 
@@ -111,30 +119,29 @@ function addMusicTaggerButton() {
 function openTaggerModal() {
     const settings = getSettings();
     
-    // 注意：这里使用了你的 CSS 类名
     const html = `
-        <h3 style="margin-top:0; border-bottom:1px solid #555; padding-bottom:10px;">🎵 MP3 歌词嵌入工具</h3>
+        <h3 style="margin:0 0 10px 0; border-bottom:1px solid #555; padding-bottom:10px;">🎵 MP3 歌词嵌入工具</h3>
         
         <div>
             <label class="mt-label">1. Groq API Key:</label>
             <input type="password" id="mt-key" class="text_pole mt-input" value="${settings.apiKey || ''}" placeholder="gsk_..." style="padding:8px;" />
         </div>
 
-        <div style="margin-top:10px;">
+        <div>
             <label class="mt-label">2. MP3 文件:</label>
-            <input type="file" id="mt-file" accept="audio/mp3" class="mt-input" />
+            <input type="file" id="mt-file" accept="audio/mp3" class="mt-input" style="padding:5px 0;" />
         </div>
 
-        <div style="margin-top:10px;">
+        <div>
             <label class="mt-label">3. 粘贴纯文本歌词:</label>
-            <textarea id="mt-lyrics-raw" class="text_pole mt-input" rows="4" placeholder="粘贴歌词..."></textarea>
+            <textarea id="mt-lyrics-raw" class="text_pole mt-input" rows="5" placeholder="粘贴歌词..."></textarea>
         </div>
 
-        <button id="mt-process-btn" class="mt-btn" style="margin-top:15px; width:100%;">⚡ 开始 AI 分析</button>
-        <div id="mt-status" style="color:cyan; margin:10px 0; font-weight:bold; height:20px;"></div>
+        <button id="mt-process-btn" class="mt-btn" style="width:100%; margin-top:10px;">⚡ 开始 AI 分析</button>
+        <div id="mt-status" style="color:cyan; margin:5px 0; font-weight:bold; height:20px;"></div>
 
-        <div id="mt-editor-area" style="display:none; flex-direction:column; overflow:hidden; flex:1;">
-            <div id="mt-rows-container" class="mt-scroll-area"></div>
+        <div id="mt-editor-area" style="display:none; flex-direction:column; overflow:hidden; flex:1; min-height:200px;">
+            <div id="mt-rows-container" class="mt-scroll-area" style="max-height: 300px; overflow-y:auto;"></div>
             <div style="margin-top:10px; display:flex; gap:10px; justify-content:flex-end;">
                 <button id="mt-download-lrc" class="mt-btn" style="background:#555;">仅 LRC</button>
                 <button id="mt-download-mp3" class="mt-btn">💾 导出 MP3</button>
@@ -142,10 +149,8 @@ function openTaggerModal() {
         </div>
     `;
 
-    // 调用我们在上面自己写的弹窗函数
     createCustomPopup(html);
 
-    // 绑定逻辑
     setTimeout(() => {
         document.getElementById('mt-key').addEventListener('input', (e) => {
             const s = getSettings();
@@ -169,7 +174,7 @@ async function runAIAnalysis() {
     if (!fileInput.files[0]) { status.innerText = "❌ 请选择文件"; return; }
     if (!apiKey) { status.innerText = "❌ 请输入 Key"; return; }
 
-    status.innerText = "⏳ 正在上传 Groq 分析...";
+    status.innerText = "⏳ 分析中...";
     document.getElementById('mt-process-btn').disabled = true;
 
     try {
@@ -185,7 +190,7 @@ async function runAIAnalysis() {
         if (!response.ok) throw new Error((await response.json()).error?.message || "API Error");
 
         const data = await response.json();
-        status.innerText = "✅ 完成！请核对时间轴";
+        status.innerText = "✅ 完成！";
         renderEditor(data.segments, rawText);
         document.getElementById('mt-editor-area').style.display = 'flex';
 
@@ -203,7 +208,7 @@ function renderEditor(segments, userText) {
 
     segments.forEach((seg, index) => {
         const row = document.createElement('div');
-        row.className = 'mt-row'; // 复用你的CSS
+        row.className = 'mt-row';
         const d = new Date(seg.start * 1000);
         const timeStr = `[${d.getMinutes().toString().padStart(2,'0')}:${d.getSeconds().toString().padStart(2,'0')}.${Math.floor(d.getMilliseconds()/10).toString().padStart(2,'0')}]`;
         const txt = userLines[index] !== undefined ? userLines[index] : seg.text.trim();
@@ -237,7 +242,7 @@ async function handleExport(embed) {
             writer.setFrame('USLT', { description: '', lyrics: lrc, language: 'zho' });
             writer.addTag();
             download(new Blob([writer.getBlob()]), name + "_lyrics.mp3");
-            status.innerText = "✅ 导出成功";
+            status.innerText = "✅ 成功";
         } catch(e) { status.innerText = "❌ 失败"; alert(e.message); }
     }
 }
