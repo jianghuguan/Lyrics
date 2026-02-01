@@ -1,6 +1,5 @@
 // --- 1. 设置与依赖管理 ---
 const SETTINGS_KEY = "music_tagger_settings";
-// 强制版本号，确保兼容性
 const URLS = {
     id3: "https://unpkg.com/browser-id3-writer@4.4.0/dist/browser-id3-writer.js",
     wavesurfer: "https://unpkg.com/wavesurfer.js@7.7.1/dist/wavesurfer.min.js",
@@ -39,7 +38,7 @@ async function loadLibraries() {
     }
 }
 
-// --- 2. 弹窗 UI (增大尺寸 + 滚动优化) ---
+// --- 2. 弹窗 UI (核心修改：整体滚动条) ---
 function createCustomPopup(htmlContent) {
     const old = document.getElementById('mt-custom-overlay');
     if (old) old.remove();
@@ -50,8 +49,10 @@ function createCustomPopup(htmlContent) {
         position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
         backgroundColor: 'rgba(0, 0, 0, 0.85)',
         zIndex: 20000,
-        display: 'flex', justifyContent: 'center', alignItems: 'flex-start',
-        paddingTop: '30px', backdropFilter: 'blur(5px)' // Top 减小一点，留更多空间给下面
+        display: 'flex', justifyContent: 'center', alignItems: 'flex-start', // 顶部对齐
+        padding: '30px 0', // 上下留白，防止贴边
+        backdropFilter: 'blur(5px)',
+        overflowY: 'auto' // 允许背景滚动（针对极小屏幕）
     });
 
     const container = document.createElement('div');
@@ -59,12 +60,14 @@ function createCustomPopup(htmlContent) {
     Object.assign(container.style, {
         position: 'relative', 
         width: '1000px', maxWidth: '95%', 
-        height: '92vh', // 【修改】高度变大
+        // 【修改重点】不再固定高度，而是设置最大高度并允许自动滚动
+        height: 'auto',
+        maxHeight: '90vh', 
+        overflowY: 'auto', // 【修改重点】整体出现垂直滚动条
         backgroundColor: '#1e1e1e', border: '1px solid #333', color: '#eee',
         borderRadius: '12px', padding: '20px', 
         boxShadow: '0 10px 40px rgba(0,0,0,0.8)',
-        display: 'flex', flexDirection: 'column', gap: '15px', 
-        overflow: 'hidden' // 内部自己滚动
+        display: 'flex', flexDirection: 'column', gap: '15px'
     });
 
     const closeBtn = document.createElement('div');
@@ -86,7 +89,7 @@ function createCustomPopup(htmlContent) {
 
 // --- 3. 插件入口 ---
 jQuery(async () => {
-    console.log("🎵 Music Tagger Loaded (Pro Editor Mode)");
+    console.log("🎵 Music Tagger Loaded (Scrollable Mode)");
     setTimeout(addMusicTaggerButton, 1000);
 });
 
@@ -143,26 +146,27 @@ function openTaggerModal() {
         <button id="mt-process-btn" style="width:100%; padding:10px; background:#2b5e99; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold;">⚡ 开始 AI 分析 & 加载编辑器</button>
         <div id="mt-status" style="color:cyan; font-weight:bold; height:20px; font-size:14px;"></div>
 
-        <!-- 底部：编辑器区域 (初始隐藏) -->
-        <div id="mt-editor-area" style="display:none; flex-direction:column; flex:1; border-top:1px solid #444; padding-top:10px; overflow:hidden;">
+        <!-- 底部：编辑器区域 -->
+        <!-- 【修改】移除 flex:1 和 hidden，让内容自然撑开 -->
+        <div id="mt-editor-area" style="display:none; flex-direction:column; border-top:1px solid #444; padding-top:10px;">
             
-            <!-- 播放控制栏 -->
-            <div style="display:flex; gap:15px; margin-bottom:10px; align-items:center;">
+            <!-- 播放控制栏 (Sticky: 滚动时吸顶，方便操作) -->
+            <div style="display:flex; gap:15px; margin-bottom:10px; align-items:center; position:sticky; top:0; background:#1e1e1e; z-index:10; padding:10px 0; border-bottom:1px solid #333;">
                 <button id="mt-play-pause" style="background:#28a745; color:white; border:none; padding:5px 15px; border-radius:4px; cursor:pointer;">▶ 播放/暂停</button>
                 <div style="display:flex; align-items:center; gap:5px; color:#ccc; font-size:12px;">
                     <span>🔍 缩放:</span>
                     <input type="range" id="mt-zoom" min="10" max="300" value="50" style="width:100px;">
                 </div>
                 <div style="color:#aaa; font-size:12px; margin-left:auto;">
-                    ✋ 拖动两端调整时间 | 👆 点击波形任意处跳转播放
+                    ✋ 拖动两端调整 | 👆 点击波形跳转
                 </div>
             </div>
 
             <!-- 波形容器 -->
             <div id="mt-waveform" style="width:100%; height:120px; background:#000; border-radius:4px; margin-bottom:10px; cursor:text;"></div>
             
-            <!-- 歌词列表 【修改】增大显示区域，增加最小高度 -->
-            <div style="flex:1; overflow-y:auto; background:#141414; padding:10px; border-radius:4px; border:1px solid #333; min-height: 400px; display:flex; flexDirection:column;">
+            <!-- 歌词列表 【修改】移除内部 overflow，让父容器滚动 -->
+            <div style="background:#141414; padding:10px; border-radius:4px; border:1px solid #333; min-height: 400px; display:flex; flexDirection:column;">
                 <div id="mt-rows-container"></div>
             </div>
 
@@ -244,7 +248,7 @@ async function runAIAndInitEditor() {
     }
 }
 
-// --- 6. WaveSurfer 编辑器配置 (重点修改) ---
+// --- 6. WaveSurfer 编辑器配置 ---
 async function initWaveSurfer(fileBlob, segments, userRawText) {
     if (window.mtWaveSurfer) window.mtWaveSurfer.destroy();
     if (!window.WaveSurfer || !window.WaveSurfer.Regions) {
@@ -254,7 +258,7 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
     const WaveSurfer = window.WaveSurfer;
     const RegionsPlugin = window.WaveSurfer.Regions;
 
-    // 1. 创建波形实例
+    // 创建波形实例
     const ws = WaveSurfer.create({
         container: '#mt-waveform',
         waveColor: '#4F4A85',
@@ -264,13 +268,12 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         barWidth: 2,
         barGap: 1,
         barRadius: 2,
-        cursorColor: '#ff0000', // 【修改】基准线改为显眼的红色
-        cursorWidth: 2,         // 【修改】基准线加粗
+        cursorColor: '#ff0000',
+        cursorWidth: 2,
         normalize: true,
         backend: 'WebAudio'
     });
 
-    // 2. 注册插件
     const wsRegions = ws.registerPlugin(RegionsPlugin.create());
     
     window.mtWaveSurfer = ws;
@@ -287,21 +290,20 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
             const text = userLines[index] || seg.text.trim();
             const color = (index % 2 === 0) ? "rgba(0, 123, 255, 0.2)" : "rgba(40, 167, 69, 0.2)";
 
-            // 【重点修改】Region 配置
+            // Region 配置：禁止拖动整体
             const region = wsRegions.addRegion({
                 id: `seg-${index}`,
                 start: seg.start,
                 end: seg.end,
                 content: `<div style="color:#fff; font-size:10px; padding:2px; overflow:hidden; white-space:nowrap; pointer-events:none;">${text}</div>`,
                 color: color,
-                drag: false,   // 【修改】禁止拖动整体
-                resize: true,  // 【修改】允许拖动边缘
+                drag: false,   // 禁止拖动整体
+                resize: true,  // 允许拖动两端
             });
 
-            // 添加列表行
             const row = document.createElement('div');
             row.id = `row-${region.id}`;
-            row.style.cssText = "display:flex; gap:10px; margin-bottom:8px; align-items:center; background:#222; padding:10px; border-radius:6px;"; // 稍微加大padding
+            row.style.cssText = "display:flex; gap:10px; margin-bottom:8px; align-items:center; background:#222; padding:10px; border-radius:6px;";
             row.innerHTML = `
                 <span style="color:#666; font-size:14px; width:25px; font-weight:bold;">${index+1}</span>
                 <input type="text" class="mt-row-text" value="${text}" style="flex:1; background:#333; color:#eee; border:none; padding:8px; border-radius:4px; font-size:14px;">
@@ -313,7 +315,7 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
                 const newText = e.target.value;
                 region.setOptions({ content: `<div style="color:#fff; font-size:10px; padding:2px; overflow:hidden; white-space:nowrap; pointer-events:none;">${newText}</div>` });
             });
-            // 联动：点击行 -> 跳转时间（但不自动播，防止打断）
+            // 联动：点击行
             row.onclick = (e) => {
                 if(e.target.tagName !== 'INPUT') {
                     ws.setTime(region.start);
@@ -324,48 +326,19 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         });
     });
 
-    // 【修改】点击波形任意位置逻辑
-    // 原生 wavesurfer 点击就会 seek，我们只需要确保 regions 不吞掉这个点击
-    // 当 drag: false 时，点击 Region 内部也会透传给 WaveSurfer，从而移动基准线并播放
+    // 点击波形播放逻辑
     wsRegions.on('region-clicked', (region, e) => {
-        // 我们不再调用 region.play()，而是让它像点击空白处一样
-        // WaveSurfer 会自动处理点击进度
-        // 这里我们只需要处理 UI 滚动
-        e.stopPropagation(); // 阻止冒泡，手动处理播放
-        
-        // 计算点击位置的时间比例，然后跳转
-        // 注意：Region click event 并不直接给时间，所以我们简单点：
-        // 如果用户点了 Region，我们假设他想从这个 Region 开始播，或者想调整指针
-        // 为了最像剪辑软件：点击哪里，指针就去哪里。
-        // 由于 WaveSurfer 插件机制，我们需要手动计算一下或者让用户点上面刻度。
-        // 但最简单的方案是：让 Region 播放当前位置。
-        
-        // 修正方案：既然 drag 禁用了，我们允许 WaveSurfer 的 interaction 处理
-        // 我们在下面绑定 interaction
-        
+        e.stopPropagation();
         const row = document.getElementById(`row-${region.id}`);
         if(row) {
             document.querySelectorAll('#mt-rows-container > div').forEach(d => d.style.background = '#222');
             row.style.background = '#334455';
-            row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            // 不自动滚动 row，防止打断用户对波形的操作
         }
-        
-        // 强制把播放头移到点击位置并播放 (Hack: region-clicked 没给具体时间，我们用鼠标位置算)
-        // 实际上，因为 drag: false，wavesurfer 的 click 可能会被触发。
-        // 如果没触发，我们用 region.start 兜底，或者直接 region.play()
-        // 这里为了体验最好，我们让它播放该 region
         region.play(); 
     });
-    
-    // 【新增】监听主波形交互，实时更新当前行高亮
-    ws.on('timeupdate', (currentTime) => {
-        // 这一步比较耗性能，每秒触发多次，做个简单的防抖或者只在秒变动时更新？
-        // 算了，直接找当前 region
-        // 实际上 regions 插件没有直接 "active region" api，需要遍历
-        // 为了性能，我们只在点击/拖拽时高亮，播放时不大规模刷屏
-    });
 
-    // 联动：拖拽波形 -> 更新时间显示 & 高亮行
+    // 拖拽联动
     wsRegions.on('region-updated', (region) => {
         const row = document.getElementById(`row-${region.id}`);
         if (row) {
