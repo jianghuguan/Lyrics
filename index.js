@@ -15,6 +15,7 @@ function saveSettings(newSettings) {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(newSettings));
 }
 
+// 顺序加载库文件
 async function loadLibraries() {
     const loadScript = (src) => new Promise((resolve, reject) => {
         if (document.querySelector(`script[src="${src}"]`)) return resolve();
@@ -53,13 +54,13 @@ function createCustomPopup(htmlContent) {
             -webkit-user-select: none;
         }
         
-        /* 歌词列表垂直滚动条 */
+        /* --- 垂直滚动条 (歌词列表) --- */
         #mt-lyrics-scroll-area::-webkit-scrollbar { width: 8px; }
         #mt-lyrics-scroll-area::-webkit-scrollbar-track { background: #1a1a1a; }
         #mt-lyrics-scroll-area::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
         #mt-lyrics-scroll-area::-webkit-scrollbar-thumb:hover { background: #555; }
 
-        /* 波形图水平滚动条 */
+        /* --- 水平滚动条 (波形图) --- */
         #mt-waveform::-webkit-scrollbar {
             height: 10px;
         }
@@ -122,7 +123,7 @@ function createCustomPopup(htmlContent) {
 
 // --- 3. 插件入口 ---
 jQuery(async () => {
-    console.log("🎵 Music Tagger Loaded (Optimized Kernel)");
+    console.log("🎵 Music Tagger Loaded (Lag Fixed Ver)");
     setTimeout(addMusicTaggerButton, 1000);
 });
 
@@ -152,7 +153,7 @@ function openTaggerModal() {
     const html = `
         <h3 style="margin:0; border-bottom:1px solid #444; padding-bottom:10px; color:#fff; display:flex; justify-content:space-between;">
             <span>🎵 智能歌词剪辑台</span>
-            <span style="font-size:12px; color:#aaa; font-weight:normal; margin-top:5px;">WaveSurfer Kernel v2</span>
+            <span style="font-size:12px; color:#aaa; font-weight:normal; margin-top:5px;">WaveSurfer Engine</span>
         </h3>
         
         <div id="mt-setup-area" style="display:flex; gap:20px; flex-wrap:wrap;">
@@ -180,6 +181,7 @@ function openTaggerModal() {
 
         <div id="mt-editor-area" style="display:none; flex-direction:column; flex:1; border-top:1px solid #444; padding-top:10px;">
             
+            <!-- 播放控制栏 (sticky) -->
             <div style="display:flex; gap:15px; margin-bottom:10px; align-items:center; position:sticky; top:0; background:#1e1e1e; z-index:10; padding:10px 0; border-bottom:1px solid #333;">
                 <button id="mt-play-pause" style="background:#28a745; color:white; border:none; padding:5px 15px; border-radius:4px; cursor:pointer;">▶ 播放/暂停</button>
                 <div style="display:flex; align-items:center; gap:5px; color:#ccc; font-size:12px;">
@@ -191,7 +193,7 @@ function openTaggerModal() {
                 </div>
             </div>
 
-            <!-- 波形容器：保留水平滚动 -->
+            <!-- 波形容器 -->
             <div id="mt-waveform" style="
                 width: 100%; 
                 height: 135px; 
@@ -294,7 +296,7 @@ async function runAIAndInitEditor() {
     }
 }
 
-// --- 6. WaveSurfer 编辑器配置 (高性能重构版) ---
+// --- 6. WaveSurfer 编辑器配置 (修复卡顿版) ---
 async function initWaveSurfer(fileBlob, segments, userRawText) {
     if (window.mtWaveSurfer) window.mtWaveSurfer.destroy();
     if (!window.WaveSurfer || !window.WaveSurfer.Regions) {
@@ -310,7 +312,7 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         waveColor: '#4F4A85',
         progressColor: '#383351',
         url: URL.createObjectURL(fileBlob),
-        height: 120, // 保持高度
+        height: 120, 
         barWidth: 2,
         barGap: 1,
         barRadius: 2,
@@ -324,6 +326,7 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         backend: 'WebAudio'
     });
 
+    // 2. 注册插件
     const wsRegions = ws.registerPlugin(RegionsPlugin.create());
     
     window.mtWaveSurfer = ws;
@@ -333,9 +336,6 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
     const container = document.getElementById('mt-rows-container');
     const scrollArea = document.getElementById('mt-lyrics-scroll-area');
     container.innerHTML = "";
-
-    // 【优化1】建立 DOM 缓存，避免后续 O(N) 查找
-    const rowDomMap = new Map(); // regionId -> DOM Element
 
     ws.on('ready', () => {
         ws.zoom(50);
@@ -355,8 +355,8 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
             });
 
             const row = document.createElement('div');
-            // 缓存中不存储 ID，直接存对象引用，更纯粹
-            row.style.cssText = "display:flex; gap:10px; margin-bottom:8px; align-items:center; background:#222; padding:10px; border-radius:6px; border-left:4px solid transparent; transition: background 0.1s;";
+            row.id = `row-${region.id}`;
+            row.style.cssText = "display:flex; gap:10px; margin-bottom:8px; align-items:center; background:#222; padding:10px; border-radius:6px; border-left:4px solid transparent;";
             row.innerHTML = `
                 <span style="color:#666; font-size:14px; width:25px; font-weight:bold;">${index+1}</span>
                 <input type="text" class="mt-row-text" value="${text}" style="flex:1; background:#333; color:#eee; border:none; padding:8px; border-radius:4px; font-size:14px;">
@@ -373,11 +373,7 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
                     ws.setTime(region.start);
                 }
             };
-            
             container.appendChild(row);
-            
-            // 存入缓存
-            rowDomMap.set(region.id, row);
         });
     });
 
@@ -386,56 +382,61 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         region.play(); 
     });
 
-    // 【优化2】播放同步逻辑：仅更新变化的行，消除 O(N) DOM 操作
-    let currentActiveId = null;
-    
-    ws.on('timeupdate', (currentTime) => {
-        // regions.find 对于几百行数据来说非常快，主要瓶颈是 DOM
-        const activeRegion = wsRegions.getRegions().find(r => currentTime >= r.start && currentTime < r.end);
-        const activeId = activeRegion ? activeRegion.id : null;
+    // 【核心优化 1】缓存 DOM 引用，避免 O(N) 循环
+    // 之前每次播放更新都会遍历所有行，现在只处理变化的行
+    let lastActiveRegionId = null;
+    let lastActiveRowEl = null;
 
-        if (activeId !== currentActiveId) {
-            // 1. 还原旧行样式
-            if (currentActiveId && rowDomMap.has(currentActiveId)) {
-                const oldRow = rowDomMap.get(currentActiveId);
-                oldRow.style.background = '#222';
-                oldRow.style.borderLeftColor = 'transparent';
+    ws.on('timeupdate', (currentTime) => {
+        // 查找当前时间对应的 region (这个操作很快，可以不优化)
+        const regions = wsRegions.getRegions();
+        const activeRegion = regions.find(r => currentTime >= r.start && currentTime < r.end);
+
+        // 只有当 ID 真正变化时才操作 DOM
+        if (activeRegion && activeRegion.id !== lastActiveRegionId) {
+            lastActiveRegionId = activeRegion.id;
+            
+            // 1. 快速还原上一个激活行的样式 (O(1) 复杂度)
+            if (lastActiveRowEl) {
+                lastActiveRowEl.style.background = '#222';
+                lastActiveRowEl.style.borderLeftColor = 'transparent';
             }
 
-            // 2. 高亮新行样式
-            if (activeId && rowDomMap.has(activeId)) {
-                const newRow = rowDomMap.get(activeId);
+            // 2. 获取并高亮新行
+            const newRow = document.getElementById(`row-${activeRegion.id}`);
+            if(newRow) {
+                lastActiveRowEl = newRow; // 更新缓存
                 newRow.style.background = '#334455';
                 newRow.style.borderLeftColor = '#007bff';
-                currentActiveId = activeId;
 
-                // 滚动计算
+                // 3. 计算滚动 (保持不变)
                 const containerHeight = scrollArea.clientHeight;
                 const rowTop = newRow.offsetTop;
                 const rowHeight = newRow.clientHeight;
                 const targetScroll = rowTop - (containerHeight / 2) + (rowHeight / 2);
                 
-                scrollArea.scrollTo({ top: targetScroll, behavior: 'smooth' });
-            } else {
-                currentActiveId = null;
+                scrollArea.scrollTo({
+                    top: targetScroll,
+                    behavior: 'smooth'
+                });
             }
         }
     });
 
-    // 【优化3】拖拽更新逻辑：使用 requestAnimationFrame 节流
-    // 防止拖拽时每像素都触发 DOM 更新导致掉帧
-    let rafId = null;
-    
+    // 【核心优化 2】使用 requestAnimationFrame 节流拖拽更新
+    // 之前拖动时每像素都会触发 DOM 更新，现在限制为屏幕刷新率
+    let animationFrameId = null;
+
     wsRegions.on('region-updated', (region) => {
-        if (rafId) return; // 如果这一帧已经在等待更新，直接跳过
-        
-        rafId = requestAnimationFrame(() => {
-            if (rowDomMap.has(region.id)) {
-                const row = rowDomMap.get(region.id);
-                // 仅更新时间文本，不重绘整个 row
+        if (animationFrameId) {
+            cancelAnimationFrame(animationFrameId);
+        }
+
+        animationFrameId = requestAnimationFrame(() => {
+            const row = document.getElementById(`row-${region.id}`);
+            if (row) {
                 row.querySelector('.mt-time-disp').innerText = formatTime(region.start);
             }
-            rafId = null; // 重置锁
         });
     });
 }
@@ -446,56 +447,10 @@ async function exportLrc(embed) {
     const regions = window.mtRegions.getRegions().sort((a, b) => a.start - b.start);
     let lrcContent = "";
     regions.forEach(r => {
-        // 由于没有用 ID 选择器，这里需要重新获取 text 比较麻烦吗？
-        // 不，我们仍然可以用 rowDomMap 或者在生成时给 input 加 id。
-        // 但最简单的是直接遍历 DOM 结构顺序，因为 regions 是排序过的。
-        // 为了稳健，我们使用 Map 反查或者直接存 input 引用。
-        // 简单起见，这里复用 rowDomMap
-        
-        // 实际上 regions 顺序可能变（如果支持换序，本代码暂不支持），所以按 regions 遍历最准
-        // 需要从 map 中取出 row
-        // 这里 rowDomMap 是局部变量，需要暴露出去或者重新获取。
-        // 重新获取方案：
-        // 之前是用 document.getElementById(`row-${r.id}`)，现在 id 没设
-        // 我们给 row 补上 id 方便导出时获取
+        const row = document.getElementById(`row-${r.id}`);
+        const text = row ? row.querySelector('.mt-row-text').value : "";
+        lrcContent += `[${formatTime(r.start)}]${text}\n`;
     });
-    
-    // 修正：为了 export 函数能获取，我们还是得给 DOM 加个 ID 或者存在全局
-    // 简单起见，在 export 函数里还是用 DOM 查询，因为导出只执行一次，不影响性能
-    
-    // 重新修改 export 逻辑
-    lrcContent = "";
-    regions.forEach((r, i) => {
-        // 由于我们上面的 row 没加 id，现在无法通过 id 获取 text。
-        // 我们需要修正上面的 create row 逻辑，加回 ID。
-        // 为了不破坏上面优化逻辑，我们在 map 里存了 row。但 map 是局部的。
-        // 方案：让 initWaveSurfer 把 map 挂载到 window 或者在创建时加 id。
-        // 加上 id 最安全。
-    });
-}
-
-// 修正后的导出逻辑依赖 DOM id，所以在 initWaveSurfer 必须加回 id
-// 上面的 initWaveSurfer 代码中，我漏写了 row.id = ...，这里补全逻辑：
-
-// --- 7. 导出 (修正版) ---
-async function exportLrc(embed) {
-    if (!window.mtRegions) return;
-    const regions = window.mtRegions.getRegions().sort((a, b) => a.start - b.start);
-    let lrcContent = "";
-    
-    // 为了兼容，我们在 initWaveSurfer 里其实应该保留 row.id。
-    // 如果 row 没 ID，这里就找不到。
-    // 我们假设 row 还是按顺序排列的（当前逻辑不支持拖拽换序），
-    // 直接取 document.querySelectorAll('.mt-row-text')[i] 也可以。
-    // 但为了严谨，我们去修改 initWaveSurfer 给 row 加 ID。
-    
-    // 这里使用 DOM 遍历降级方案，假设没有 ID
-    const inputs = document.querySelectorAll('.mt-row-text');
-    regions.forEach((r, i) => {
-       const text = inputs[i] ? inputs[i].value : "";
-       lrcContent += `[${formatTime(r.start)}]${text}\n`;
-    });
-
     const file = document.getElementById('mt-file').files[0];
     const baseName = file.name.replace(/\.[^/.]+$/, "");
 
