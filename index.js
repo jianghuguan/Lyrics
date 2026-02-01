@@ -53,11 +53,30 @@ function createCustomPopup(htmlContent) {
             user-select: none;
             -webkit-user-select: none;
         }
-        /* 滚动条美化 */
+        
+        /* --- 垂直滚动条 (歌词列表) --- */
         #mt-lyrics-scroll-area::-webkit-scrollbar { width: 8px; }
         #mt-lyrics-scroll-area::-webkit-scrollbar-track { background: #1a1a1a; }
         #mt-lyrics-scroll-area::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
         #mt-lyrics-scroll-area::-webkit-scrollbar-thumb:hover { background: #555; }
+
+        /* --- 水平滚动条 (波形图) --- */
+        #mt-waveform::-webkit-scrollbar {
+            height: 10px; /* 增加高度方便点击 */
+        }
+        #mt-waveform::-webkit-scrollbar-track {
+            background: #111;
+            border-bottom-left-radius: 4px;
+            border-bottom-right-radius: 4px;
+        }
+        #mt-waveform::-webkit-scrollbar-thumb {
+            background: #555;
+            border-radius: 5px;
+            border: 2px solid #111; /* 增加一点间隙 */
+        }
+        #mt-waveform::-webkit-scrollbar-thumb:hover {
+            background: #777;
+        }
     `;
     document.head.appendChild(style);
 
@@ -104,7 +123,7 @@ function createCustomPopup(htmlContent) {
 
 // --- 3. 插件入口 ---
 jQuery(async () => {
-    console.log("🎵 Music Tagger Loaded (Performance Optimized)");
+    console.log("🎵 Music Tagger Loaded (Scrollbar Ver)");
     setTimeout(addMusicTaggerButton, 1000);
 });
 
@@ -170,12 +189,22 @@ function openTaggerModal() {
                     <input type="range" id="mt-zoom" min="10" max="300" value="50" style="width:100px;">
                 </div>
                 <div style="color:#aaa; font-size:12px; margin-left:auto;">
-                    ✋ 拖动两端调整 | 👆 点击波形跳转
+                    ✋ 拖动底部滚动条或两端调整
                 </div>
             </div>
 
             <!-- 波形容器 -->
-            <div id="mt-waveform" style="width:100%; height:120px; background:#000; border-radius:4px; margin-bottom:15px; cursor:text;"></div>
+            <!-- 修改：增加高度至135px，overflow-x: auto 开启水平滚动条 -->
+            <div id="mt-waveform" style="
+                width: 100%; 
+                height: 135px; 
+                background: #000; 
+                border-radius: 4px; 
+                margin-bottom: 15px; 
+                cursor: text;
+                overflow-x: auto; /* 开启水平滚动 */
+                overflow-y: hidden;
+            "></div>
             
             <!-- 歌词列表容器 -->
             <div id="mt-lyrics-scroll-area" style="
@@ -268,7 +297,7 @@ async function runAIAndInitEditor() {
     }
 }
 
-// --- 6. WaveSurfer 编辑器配置 (性能优化版) ---
+// --- 6. WaveSurfer 编辑器配置 ---
 async function initWaveSurfer(fileBlob, segments, userRawText) {
     if (window.mtWaveSurfer) window.mtWaveSurfer.destroy();
     if (!window.WaveSurfer || !window.WaveSurfer.Regions) {
@@ -284,16 +313,14 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         waveColor: '#4F4A85',
         progressColor: '#383351',
         url: URL.createObjectURL(fileBlob),
-        height: 120,
+        height: 120, // 保持波形自身高度为 120，留 15px 给滚动条
         barWidth: 2,
         barGap: 1,
         barRadius: 2,
-        // 【关键优化 1】降低采样率，加快长音频渲染
         sampleRate: 3000, 
-        // 【关键优化 2】强制 1倍像素渲染，极大降低高分屏显卡负担，解决卡顿
         pixelRatio: 1, 
         normalize: true,
-        autoScroll: true, // 开启原生自动滚动
+        autoScroll: true,
         autoCenter: true,
         cursorColor: '#ff0000',
         cursorWidth: 2,
@@ -358,14 +385,12 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
 
     let lastActiveRegionId = null;
     ws.on('timeupdate', (currentTime) => {
-        // 简单查找，性能开销极低
         const regions = wsRegions.getRegions();
         const activeRegion = regions.find(r => currentTime >= r.start && currentTime < r.end);
 
         if (activeRegion && activeRegion.id !== lastActiveRegionId) {
             lastActiveRegionId = activeRegion.id;
             
-            // 使用 CSS 类来批量清理样式可能更快，但保持 JS 逻辑简单
             const rows = document.getElementById('mt-rows-container').children;
             for(let r of rows) {
                 r.style.background = '#222';
