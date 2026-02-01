@@ -1,4 +1,4 @@
-// --- 1. 设置与依赖 management ---
+// --- 1. 设置与依赖管理 ---
 const SETTINGS_KEY = "music_tagger_settings";
 const URLS = {
     id3: "https://unpkg.com/browser-id3-writer@4.4.0/dist/browser-id3-writer.js",
@@ -15,6 +15,7 @@ function saveSettings(newSettings) {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(newSettings));
 }
 
+// 顺序加载库文件
 async function loadLibraries() {
     const loadScript = (src) => new Promise((resolve, reject) => {
         if (document.querySelector(`script[src="${src}"]`)) return resolve();
@@ -37,37 +38,32 @@ async function loadLibraries() {
     }
 }
 
-// --- 2. 弹窗 UI (强制居中定位) ---
+// --- 2. 弹窗 UI (固定布局 + 独立滚动区域) ---
 function createCustomPopup(htmlContent) {
     const old = document.getElementById('mt-custom-overlay');
     if (old) old.remove();
 
-    // 背景遮罩
     const overlay = document.createElement('div');
     overlay.id = 'mt-custom-overlay';
     Object.assign(overlay.style, {
-        position: 'fixed', top: '0', left: '0', 
-        width: '100vw', height: '100vh',
+        position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
         backgroundColor: 'rgba(0, 0, 0, 0.85)',
-        zIndex: '2147483640', // 极高层级
-        backdropFilter: 'blur(3px)'
+        zIndex: 20000,
+        display: 'flex', justifyContent: 'center', alignItems: 'center', // 垂直水平居中
+        backdropFilter: 'blur(5px)'
     });
 
-    // 弹窗本体 (使用 transform 强制居中)
     const container = document.createElement('div');
     container.className = 'mt-modal';
     Object.assign(container.style, {
-        position: 'fixed', 
-        top: '50%', left: '50%', 
-        transform: 'translate(-50%, -50%)', // 核心：强制居中
-        width: '1000px', maxWidth: '90vw', 
-        height: '80vh', // 稍微减小高度，防止撑破屏幕
+        position: 'relative', 
+        width: '1000px', maxWidth: '95%', 
+        height: '85vh', // 【核心】固定高度，不再随内容撑开
         backgroundColor: '#1e1e1e', border: '1px solid #333', color: '#eee',
-        borderRadius: '12px', padding: '20px', 
-        boxShadow: '0 0 50px rgba(0,0,0,0.9)',
-        zIndex: '2147483647', // 确保在遮罩之上
-        display: 'flex', flexDirection: 'column', gap: '10px',
-        overflow: 'hidden' 
+        borderRadius: '12px', 
+        boxShadow: '0 20px 60px rgba(0,0,0,0.9)',
+        display: 'flex', flexDirection: 'column', // Flex 纵向布局
+        overflow: 'hidden' // 禁止整个弹窗出现滚动条，滚动条只给列表
     });
 
     const closeBtn = document.createElement('div');
@@ -81,15 +77,24 @@ function createCustomPopup(htmlContent) {
         overlay.remove();
     };
 
-    container.innerHTML = htmlContent;
-    overlay.appendChild(container); // 这里实际上是为了关闭点击事件，为了层级也可以直接 append 到 body
-    // 但为了结构清晰，我们把 modal 放在 overlay 里，但 modal 使用 fixed 定位跳出 overlay 的流
+    // 内部容器 padding，因为 overflow hidden，我们在内部做 padding
+    const contentWrapper = document.createElement('div');
+    Object.assign(contentWrapper.style, {
+        display: 'flex', flexDirection: 'column', 
+        height: '100%', width: '100%', padding: '20px', 
+        boxSizing: 'border-box', gap: '15px'
+    });
+    
+    contentWrapper.innerHTML = htmlContent;
+    container.appendChild(closeBtn);
+    container.appendChild(contentWrapper);
+    overlay.appendChild(container);
     document.body.appendChild(overlay);
 }
 
 // --- 3. 插件入口 ---
 jQuery(async () => {
-    console.log("🎵 Music Tagger Loaded (Center Fix)");
+    console.log("🎵 Music Tagger Loaded (Fixed Layout Mode)");
     setTimeout(addMusicTaggerButton, 1000);
 });
 
@@ -112,67 +117,68 @@ function addMusicTaggerButton() {
     document.body.appendChild(btn);
 }
 
-// --- 4. 界面构建 ---
+// --- 4. 界面 HTML ---
 function openTaggerModal() {
     const settings = getSettings();
     
     const html = `
-        <h3 style="margin:0; border-bottom:1px solid #444; padding-bottom:10px; color:#fff; flex-shrink: 0;">
-            🎵 智能歌词剪辑台 <span style="font-size:12px; color:#aaa; font-weight:normal;">v3.1</span>
+        <h3 style="margin:0; border-bottom:1px solid #444; padding-bottom:10px; color:#fff; display:flex; justify-content:space-between; flex-shrink: 0;">
+            <span>🎵 智能歌词剪辑台</span>
+            <span style="font-size:12px; color:#aaa; font-weight:normal; margin-top:5px;">WaveSurfer Engine</span>
         </h3>
         
-        <!-- 顶部设置区 (AI 分析前显示) -->
+        <!-- 顶部设置区 (Flex item, shrinkable) -->
         <div id="mt-setup-area" style="display:flex; flex-direction:column; gap:15px; flex-shrink: 0;">
             <div style="display:flex; gap:20px; flex-wrap:wrap;">
-                <div style="flex:1;">
-                    <label class="mt-label" style="color:#ccc;">1. Groq API Key:</label>
-                    <input type="password" id="mt-key" value="${settings.apiKey || ''}" placeholder="gsk_..." style="width:100%; padding:8px; margin-top:5px; background:#333; color:#fff; border:1px solid #555; border-radius:4px;" />
+                <div style="flex:1; min-width:200px;">
+                    <label class="mt-label" style="color:#ccc; display:block; margin-bottom:5px;">1. Groq API Key:</label>
+                    <input type="password" id="mt-key" value="${settings.apiKey || ''}" placeholder="gsk_..." style="width:100%; padding:8px; background:#333; color:#fff; border:1px solid #555; border-radius:4px;" />
                 </div>
-                <div style="flex:1;">
-                    <label class="mt-label" style="color:#ccc;">2. MP3 文件:</label>
-                    <div style="display:flex; gap:10px; margin-top:5px;">
+                <div style="flex:1; min-width:200px;">
+                    <label class="mt-label" style="color:#ccc; display:block; margin-bottom:5px;">2. MP3 文件:</label>
+                    <div style="display:flex; gap:10px;">
                         <input type="file" id="mt-file" accept="audio/mp3" style="display:none;" />
                         <button id="mt-file-btn" style="background:#444; color:white; border:1px solid #666; padding:8px 12px; border-radius:4px; cursor:pointer;">📂 选择文件</button>
                         <span id="mt-filename" style="color:#aaa; align-self:center; font-size:12px;">未选择</span>
                     </div>
                 </div>
             </div>
+
             <div>
-                <label class="mt-label" style="color:#ccc;">3. 歌词文本 (可选):</label>
-                <textarea id="mt-lyrics-raw" rows="3" placeholder="粘贴纯歌词文本，AI 将尝试自动对齐..." style="width:100%; margin-top:5px; background:#333; color:#fff; border:1px solid #555; border-radius:4px; resize:none;"></textarea>
+                <label class="mt-label" style="color:#ccc; display:block; margin-bottom:5px;">3. 歌词文本 (可选):</label>
+                <textarea id="mt-lyrics-raw" rows="2" placeholder="粘贴纯歌词文本，AI 将尝试自动对齐..." style="width:100%; background:#333; color:#fff; border:1px solid #555; border-radius:4px; resize:vertical;"></textarea>
             </div>
-            <button id="mt-process-btn" style="width:100%; padding:12px; background:#2b5e99; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold;">⚡ 开始 AI 分析</button>
+
+            <button id="mt-process-btn" style="width:100%; padding:10px; background:#2b5e99; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold;">⚡ 开始 AI 分析 & 加载编辑器</button>
             <div id="mt-status" style="color:cyan; font-weight:bold; height:20px; font-size:14px;"></div>
         </div>
 
-        <!-- 编辑器区域 (初始隐藏，Flex 布局) -->
-        <div id="mt-editor-area" style="display:none; flex-direction:column; flex:1; overflow:hidden;">
+        <!-- 底部编辑器区 (Flex item, grow) -->
+        <!-- 初始隐藏，显示时 flex-grow: 1 撑满剩余高度 -->
+        <div id="mt-editor-area" style="display:none; flex-direction:column; flex:1; border-top:1px solid #444; padding-top:10px; min-height: 0;">
             
-            <!-- 1. 顶部固定区：播放控制 + 波形 -->
-            <div style="flex-shrink: 0; border-bottom:1px solid #333; padding-bottom:10px; margin-bottom:10px;">
-                <div style="display:flex; gap:15px; margin-bottom:10px; align-items:center;">
-                    <button id="mt-play-pause" style="background:#28a745; color:white; border:none; padding:5px 15px; border-radius:4px; cursor:pointer;">▶ 播放/暂停</button>
-                    <div style="display:flex; align-items:center; gap:5px; color:#ccc; font-size:12px;">
-                        <span>🔍 缩放:</span>
-                        <input type="range" id="mt-zoom" min="10" max="300" value="50" style="width:100px;">
-                    </div>
-                    <div style="color:#aaa; font-size:12px; margin-left:auto;">
-                        ✋ 拖动两端 | 👆 点击波形
-                    </div>
+            <!-- 固定控制栏 -->
+            <div style="display:flex; gap:15px; margin-bottom:10px; align-items:center; flex-shrink: 0;">
+                <button id="mt-play-pause" style="background:#28a745; color:white; border:none; padding:5px 15px; border-radius:4px; cursor:pointer;">▶ 播放/暂停</button>
+                <div style="display:flex; align-items:center; gap:5px; color:#ccc; font-size:12px;">
+                    <span>🔍 缩放:</span>
+                    <input type="range" id="mt-zoom" min="10" max="300" value="50" style="width:100px;">
                 </div>
-                <!-- 波形 -->
-                <div id="mt-waveform" style="width:100%; height:120px; background:#000; border-radius:4px; cursor:text;"></div>
             </div>
+
+            <!-- 固定波形容器 -->
+            <div id="mt-waveform" style="width:100%; height:120px; background:#000; border-radius:4px; margin-bottom:10px; cursor:text; flex-shrink: 0;"></div>
             
-            <!-- 2. 中间滚动区：歌词列表 (独立滚动) -->
-            <div style="flex:1; overflow-y:auto; background:#141414; padding:5px; border-radius:4px; border:1px solid #333; margin-bottom:10px;">
+            <!-- 滚动歌词列表容器 -->
+            <!-- 【核心修改】flex: 1 自动占满高度，overflow-y: auto 只有这里滚动 -->
+            <div style="flex:1; overflow-y:auto; background:#141414; padding:10px; border-radius:4px; border:1px solid #333; margin-bottom:10px;">
                 <div id="mt-rows-container"></div>
             </div>
 
-            <!-- 3. 底部固定区：导出 -->
-            <div style="flex-shrink: 0; display:flex; gap:10px; justify-content:flex-end;">
-                <button id="mt-download-lrc" style="background:#555; padding:10px 20px; color:white; border:none; border-radius:4px; cursor:pointer;">下载 .lrc</button>
-                <button id="mt-download-mp3" style="background:#2b5e99; padding:10px 20px; color:white; border:none; border-radius:4px; cursor:pointer;">💾 导出 MP3</button>
+            <!-- 底部导出按钮 (固定) -->
+            <div style="display:flex; gap:10px; justify-content:flex-end; flex-shrink: 0;">
+                <button id="mt-download-lrc" style="background:#555; padding:8px 15px; color:white; border:none; border-radius:4px; cursor:pointer;">下载 .lrc (推荐)</button>
+                <button id="mt-download-mp3" style="background:#2b5e99; padding:8px 15px; color:white; border:none; border-radius:4px; cursor:pointer;">💾 导出内嵌 MP3</button>
             </div>
         </div>
     `;
@@ -209,6 +215,7 @@ function openTaggerModal() {
     document.getElementById('mt-download-mp3').onclick = () => exportLrc(true);
 }
 
+// --- 5. AI 分析逻辑 ---
 async function runAIAndInitEditor() {
     const file = document.getElementById('mt-file').files[0];
     const apiKey = document.getElementById('mt-key').value;
@@ -233,12 +240,13 @@ async function runAIAndInitEditor() {
         if (!response.ok) throw new Error((await response.json()).error?.message || "API Error");
         const data = await response.json();
 
-        status.innerText = "✅ 分析完成，渲染编辑器...";
-        document.getElementById('mt-setup-area').style.display = 'none'; 
-        document.getElementById('mt-editor-area').style.display = 'flex'; // Flex显示
+        status.innerText = "✅ 分析完成，渲染波形...";
+        // 切换视图：隐藏 Setup，显示 Editor，并且让 Editor 撑满 Flex 容器
+        document.getElementById('mt-setup-area').style.display = 'none';
+        document.getElementById('mt-editor-area').style.display = 'flex';
         
         await initWaveSurfer(file, data.segments, rawText);
-        status.innerText = "🎵 就绪！";
+        status.innerText = "🎵 就绪";
 
     } catch (e) {
         status.innerText = "❌ 错误: " + e.message;
@@ -246,11 +254,10 @@ async function runAIAndInitEditor() {
     }
 }
 
-// --- WaveSurfer 核心配置 ---
+// --- 6. WaveSurfer & 编辑逻辑 ---
 async function initWaveSurfer(fileBlob, segments, userRawText) {
     if (window.mtWaveSurfer) window.mtWaveSurfer.destroy();
-    if (!window.WaveSurfer || !window.WaveSurfer.Regions) return alert("组件加载中...");
-
+    
     const WaveSurfer = window.WaveSurfer;
     const RegionsPlugin = window.WaveSurfer.Regions;
 
@@ -266,8 +273,7 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         cursorColor: '#ff0000',
         cursorWidth: 2,
         normalize: true,
-        backend: 'WebAudio',
-        minPxPerSec: 50, 
+        backend: 'WebAudio'
     });
 
     const wsRegions = ws.registerPlugin(RegionsPlugin.create());
@@ -286,41 +292,52 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
             const text = userLines[index] || seg.text.trim();
             const color = (index % 2 === 0) ? "rgba(0, 123, 255, 0.2)" : "rgba(40, 167, 69, 0.2)";
 
-            const labelEl = document.createElement('div');
-            Object.assign(labelEl.style, {
-                color: '#fff', fontSize: '10px', padding: '2px', 
-                whiteSpace: 'nowrap', overflow: 'hidden', pointerEvents: 'none'
-            });
-            labelEl.textContent = text; 
-
+            // 【修改】 content 只传纯文本，不传HTML字符串，防止爆代码
             const region = wsRegions.addRegion({
                 id: `seg-${index}`,
                 start: seg.start,
                 end: seg.end,
-                content: labelEl,
+                content: text, // 直接传文本，WaveSurfer 会自动处理
                 color: color,
-                drag: false,   
-                resize: true,  
+                drag: false,   // 禁止拖动整体 (防误触)
+                resize: true,  // 允许拖动两端
             });
+
+            // 如果直接传文本太小或样式不对，我们可以通过 CSS 注入修改 content 样式
+            // 这里动态注入一个 style 标签来美化 region 内的文字
+            if(!document.getElementById('mt-region-style')) {
+                const style = document.createElement('style');
+                style.id = 'mt-region-style';
+                style.innerHTML = `
+                    .wavesurfer-region-content { 
+                        color: #fff !important; font-size: 11px !important; 
+                        padding: 4px !important; overflow: hidden; white-space: nowrap; 
+                        pointer-events: none; text-shadow: 1px 1px 2px black;
+                    }
+                `;
+                document.head.appendChild(style);
+            }
 
             const row = document.createElement('div');
             row.id = `row-${region.id}`;
-            row.style.cssText = "display:flex; gap:10px; margin-bottom:5px; align-items:center; background:#222; padding:8px; border-radius:4px;";
+            row.style.cssText = "display:flex; gap:10px; margin-bottom:8px; align-items:center; background:#222; padding:10px; border-radius:6px;";
             row.innerHTML = `
-                <span style="color:#666; font-size:12px; width:20px; font-weight:bold;">${index+1}</span>
-                <input type="text" class="mt-row-text" value="${text}" style="flex:1; background:#333; color:#eee; border:none; padding:6px; border-radius:3px; font-size:13px;">
-                <span class="mt-time-disp" style="font-family:monospace; color:#aaa; font-size:12px; min-width:80px; text-align:right;">${formatTime(seg.start)}</span>
+                <span style="color:#666; font-size:14px; width:25px; font-weight:bold;">${index+1}</span>
+                <input type="text" class="mt-row-text" value="${text}" style="flex:1; background:#333; color:#eee; border:none; padding:8px; border-radius:4px; font-size:14px;">
+                <span class="mt-time-disp" style="font-family:monospace; color:#aaa; font-size:13px; min-width:90px; text-align:right;">${formatTime(seg.start)}</span>
             `;
             
             row.querySelector('input').addEventListener('input', (e) => {
                 const newText = e.target.value;
-                labelEl.textContent = newText;
+                // 更新时也只更新文本
+                region.setOptions({ content: newText });
             });
             
-            // 点击行：只跳转播放头，不自动滚动列表
+            // 点击列表行 -> 跳转时间 (但不自动播)
             row.onclick = (e) => {
                 if(e.target.tagName !== 'INPUT') {
                     ws.setTime(region.start);
+                    // 点击列表时，只高亮，不自动播放
                     document.querySelectorAll('#mt-rows-container > div').forEach(d => d.style.background = '#222');
                     row.style.background = '#334455';
                 }
@@ -329,26 +346,35 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         });
     });
 
-    // 点击波形：播放，高亮行，不滚动
+    // 【修改】点击波形歌词条
     wsRegions.on('region-clicked', (region, e) => {
         e.stopPropagation(); 
-        region.play();
+        
+        // 1. 高亮对应的列表行，方便用户知道点的是哪句
         const row = document.getElementById(`row-${region.id}`);
         if(row) {
             document.querySelectorAll('#mt-rows-container > div').forEach(d => d.style.background = '#222');
             row.style.background = '#334455';
+            // 【核心修复】移除了 row.scrollIntoView(...)，点击波形不会导致下方列表乱跳
         }
+        
+        // 2. 播放该片段
+        region.play(); 
     });
 
+    // 拖动更新
     wsRegions.on('region-updated', (region) => {
         const row = document.getElementById(`row-${region.id}`);
         if (row) {
             row.querySelector('.mt-time-disp').innerText = formatTime(region.start);
+            // 拖动时也不要乱跳 scroll，只高亮
+            document.querySelectorAll('#mt-rows-container > div').forEach(d => d.style.background = '#222');
+            row.style.background = '#334455';
         }
     });
 }
 
-// --- 导出逻辑 ---
+// --- 7. 导出 ---
 async function exportLrc(embed) {
     if (!window.mtRegions) return;
     const regions = window.mtRegions.getRegions().sort((a, b) => a.start - b.start);
@@ -365,14 +391,14 @@ async function exportLrc(embed) {
         download(new Blob([lrcContent]), baseName + ".lrc");
     } else {
         const status = document.getElementById('mt-status');
-        status.innerText = "⏳ 写入标签...";
+        status.innerText = "⏳ 写入 ID3 标签...";
         try {
             const writer = new window.ID3Writer(await file.arrayBuffer());
             writer.setFrame('USLT', { description: '', lyrics: lrcContent, language: 'eng' });
             writer.addTag();
             download(new Blob([writer.getBlob()]), baseName + "_lyrics.mp3");
-            status.innerText = "✅ 完成";
-        } catch(e) { status.innerText = "❌ 失败: " + e.message; }
+            status.innerText = "✅ 成功!";
+        } catch(e) { status.innerText = "❌ 写入失败: " + e.message; }
     }
 }
 
