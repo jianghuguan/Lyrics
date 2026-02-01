@@ -1,47 +1,88 @@
-import { extension_settings } from "../../../extensions.js";
-import { saveSettingsDebounced } from "../../../script.js";
-import { callPopup } from "../../../popup.js";
+// 修复：使用 ../../ 适配标准安装路径
+import { extension_settings } from "../../extensions.js";
+import { saveSettingsDebounced } from "../../script.js";
+import { callPopup } from "../../popup.js";
 
 const SETTINGS_KEY = "music_tagger_settings";
-let settings = extension_settings[SETTINGS_KEY] || { apiKey: "" };
+// 初始化设置，防止报错
+if (!extension_settings[SETTINGS_KEY]) {
+    extension_settings[SETTINGS_KEY] = { apiKey: "" };
+}
+let settings = extension_settings[SETTINGS_KEY];
 
-// 动态加载 ID3 写入库 (使用 unpkg CDN)
+// 动态加载 ID3 写入库
 const ID3_LIB_URL = "https://unpkg.com/browser-id3-writer@4.4.0/dist/browser-id3-writer.js";
 let isLibLoaded = false;
 
+// 加载外部库的函数
 async function loadID3Library() {
-    if (isLibLoaded) return;
+    if (isLibLoaded || window.ID3Writer) {
+        isLibLoaded = true;
+        return;
+    }
     return new Promise((resolve, reject) => {
         const script = document.createElement("script");
         script.src = ID3_LIB_URL;
         script.onload = () => { isLibLoaded = true; resolve(); };
-        script.onerror = () => reject(new Error("无法加载 ID3 Writer 库，请检查网络"));
+        script.onerror = () => {
+            console.error("ID3 Writer 库加载失败");
+            reject(new Error("无法加载 ID3 Writer 库，请检查网络连接"));
+        };
         document.head.appendChild(script);
     });
 }
 
+// 插件入口
 jQuery(async () => {
-    // 创建入口按钮 (浮动在右上角，或者你可以改为添加到Slash命令)
-    const btn = document.createElement("div");
-    btn.innerHTML = "🎵";
-    btn.title = "打开 MP3 歌词嵌入工具";
-    Object.assign(btn.style, {
-        position: "fixed", top: "50px", right: "10px", zIndex: "2000",
-        cursor: "pointer", fontSize: "24px", background: "var(--SmartThemeQuoteColor)",
-        color: "white", padding: "8px", borderRadius: "50%", boxShadow: "0 2px 5px rgba(0,0,0,0.5)"
-    });
-    btn.onclick = openTaggerModal;
-    document.body.appendChild(btn);
+    // 延时一点加载，确保界面准备好
+    setTimeout(() => {
+        addMusicTaggerButton();
+    }, 1000);
 });
 
+function addMusicTaggerButton() {
+    // 防止重复添加
+    if (document.getElementById("open-music-tagger-btn")) return;
+
+    const btn = document.createElement("div");
+    btn.id = "open-music-tagger-btn";
+    btn.innerHTML = "🎵";
+    btn.title = "打开 MP3 歌词嵌入工具";
+    
+    // 样式设置
+    Object.assign(btn.style, {
+        position: "fixed", 
+        top: "60px", 
+        right: "10px", 
+        zIndex: "2000",
+        cursor: "pointer", 
+        fontSize: "24px", 
+        background: "var(--SmartThemeQuoteColor)",
+        color: "white", 
+        padding: "8px", 
+        borderRadius: "50%", 
+        boxShadow: "0 2px 5px rgba(0,0,0,0.5)",
+        transition: "transform 0.2s"
+    });
+    
+    btn.onmouseover = () => btn.style.transform = "scale(1.1)";
+    btn.onmouseout = () => btn.style.transform = "scale(1.0)";
+    btn.onclick = openTaggerModal;
+    
+    document.body.appendChild(btn);
+}
+
 function openTaggerModal() {
+    // 重新获取最新的设置
+    settings = extension_settings[SETTINGS_KEY];
+    
     const html = `
     <div class="mt-modal">
         <h3>🎵 MP3 歌词嵌入工具 (Groq版)</h3>
         
         <div>
             <label class="mt-label">1. Groq API Key (免费):</label>
-            <input type="password" id="mt-key" class="text_pole mt-input" value="${settings.apiKey}" placeholder="gsk_..." />
+            <input type="password" id="mt-key" class="text_pole mt-input" value="${settings.apiKey || ''}" placeholder="gsk_..." />
             <div class="mt-note">请前往 console.groq.com 申请免费 Key</div>
         </div>
 
@@ -58,9 +99,9 @@ function openTaggerModal() {
         </div>
 
         <button id="mt-process-btn" class="mt-btn">⚡ 使用 AI 分析时间轴</button>
-        <div id="mt-status" style="color:cyan;"></div>
+        <div id="mt-status" style="color:cyan; min-height: 20px;"></div>
 
-        <div id="mt-editor-area" style="display:none; flex-grow:1; display:flex; flex-direction:column;">
+        <div id="mt-editor-area" style="display:none; flex-grow:1; flex-direction:column;">
             <label class="mt-label">4. 预览与编辑 (确保文字对应正确的时间):</label>
             <div id="mt-rows-container" class="mt-scroll-area"></div>
             
@@ -72,10 +113,11 @@ function openTaggerModal() {
     </div>
     `;
 
+    // 调用酒馆的弹窗
     callPopup(html, "text", "", { wide: true, large: true });
 
     // 绑定事件
-    document.getElementById('mt-key').addEventListener('change', (e) => {
+    document.getElementById('mt-key').addEventListener('input', (e) => {
         settings.apiKey = e.target.value;
         extension_settings[SETTINGS_KEY] = settings;
         saveSettingsDebounced();
@@ -95,10 +137,16 @@ async function runAIAnalysis() {
     const status = document.getElementById('mt-status');
     const rawText = document.getElementById('mt-lyrics-raw').value;
 
-    if (!fileInput.files[0]) return alert("请先选择 MP3 文件");
-    if (!apiKey) return alert("请输入 Groq API Key");
+    if (!fileInput.files[0]) {
+        status.innerText = "❌ 请先选择 MP3 文件";
+        return;
+    }
+    if (!apiKey) {
+        status.innerText = "❌ 请输入 Groq API Key";
+        return;
+    }
 
-    status.innerText = "正在上传并分析音频 (whisper-large-v3)...";
+    status.innerText = "⏳ 正在上传并分析音频 (whisper-large-v3)...";
     const btn = document.getElementById('mt-process-btn');
     btn.disabled = true;
 
@@ -106,7 +154,7 @@ async function runAIAnalysis() {
         const formData = new FormData();
         formData.append("file", fileInput.files[0]);
         formData.append("model", "whisper-large-v3");
-        formData.append("response_format", "verbose_json"); // 获取详细时间戳
+        formData.append("response_format", "verbose_json");
 
         const response = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
             method: "POST",
@@ -120,13 +168,16 @@ async function runAIAnalysis() {
         }
 
         const data = await response.json();
-        status.innerText = "分析完成！请在下方核对歌词。";
+        status.innerText = "✅ 分析完成！请在下方核对歌词。";
         
         renderEditor(data.segments, rawText);
-        document.getElementById('mt-editor-area').style.display = 'flex'; // 显示编辑器
-
+        
+        // 修改显示方式以兼容不同浏览器
+        const editor = document.getElementById('mt-editor-area');
+        editor.style.display = 'flex'; 
+        
     } catch (e) {
-        status.innerText = "错误: " + e.message;
+        status.innerText = "❌ 错误: " + e.message;
         console.error(e);
     } finally {
         btn.disabled = false;
@@ -137,19 +188,12 @@ function renderEditor(segments, userText) {
     const container = document.getElementById('mt-rows-container');
     container.innerHTML = "";
 
-    // 将用户输入的文本按行分割，过滤空行
     const userLines = userText.split('\n').filter(l => l.trim().length > 0);
 
-    // 策略：以 AI 识别出的时间段为基准
-    // 如果用户提供了歌词，则优先按顺序填入用户的歌词
     segments.forEach((seg, index) => {
         const row = document.createElement('div');
         row.className = 'mt-row';
-        
-        // 格式化时间 [mm:ss.xx]
         const timeStr = formatTime(seg.start);
-        
-        // 优先使用用户对应的行，如果用户行数不够，使用AI听写的原文
         const textContent = userLines[index] !== undefined ? userLines[index] : seg.text.trim();
 
         row.innerHTML = `
@@ -160,7 +204,7 @@ function renderEditor(segments, userText) {
         container.appendChild(row);
     });
 
-    // 如果用户粘贴的行数比 AI 听到的段落多，把多余的也显示出来（时间戳为空）
+    // 处理多余的行
     if (userLines.length > segments.length) {
         for (let i = segments.length; i < userLines.length; i++) {
             const row = document.createElement('div');
@@ -185,11 +229,12 @@ function formatTime(seconds) {
 }
 
 async function handleExport(embedInMp3) {
-    if (embedInMp3 && !window.ID3Writer) {
-        await loadID3Library();
+    if (embedInMp3) {
+        if (!window.ID3Writer && !isLibLoaded) {
+            await loadID3Library();
+        }
     }
 
-    // 1. 生成 LRC 字符串
     const rows = document.querySelectorAll('.mt-row');
     let lrcContent = "";
     rows.forEach(row => {
@@ -207,32 +252,24 @@ async function handleExport(embedInMp3) {
     const originalName = originalFile.name.replace(/\.[^/.]+$/, "");
 
     if (!embedInMp3) {
-        // === 仅下载 LRC ===
         downloadBlob(new Blob([lrcContent], { type: "text/plain" }), `${originalName}.lrc`);
     } else {
-        // === 嵌入 MP3 ===
         const status = document.getElementById('mt-status');
-        status.innerText = "正在处理 MP3 文件...";
+        status.innerText = "⏳ 正在写入 ID3 标签...";
         
         try {
             const arrayBuffer = await originalFile.arrayBuffer();
             
-            // 使用 browser-id3-writer
+            // 确保库已加载
+            if (!window.ID3Writer) throw new Error("ID3 Writer 库未加载");
+
             const writer = new window.ID3Writer(arrayBuffer);
             
-            // 写入 USLT 帧 (Unsynchronized lyrics)
-            // 许多播放器会读取这个作为歌词
             writer.setFrame('USLT', {
                 description: '',
                 lyrics: lrcContent,
-                language: 'zho' // 假设是中文
+                language: 'zho'
             });
-            
-            // 保留原有的 Tag 比较复杂，ID3Writer 会覆盖旧的 ID3v2 头部
-            // 如果需要保留原有的 标题/作者，这里需要先读取再写入。
-            // 为了简化，这里我们只添加歌词。如果原文件没有标签，它就是新的标签。
-            // *注意：这个库在写入新标签时，如果原文件有ID3v2标签，可能会丢失其他元数据。*
-            // 但对于单纯"加歌词"的需求，这是 Web 端最简单的方案。
             
             writer.addTag();
             
@@ -243,11 +280,12 @@ async function handleExport(embedInMp3) {
             link.click();
             
             URL.revokeObjectURL(taggedUrl);
-            status.innerText = "导出成功！";
+            status.innerText = "✅ 导出成功！文件已下载。";
 
         } catch (e) {
             console.error(e);
-            alert("MP3 处理失败，请检查文件是否损坏或受保护。");
+            alert("MP3 处理失败，请查看控制台 (F12)。可能原因：文件格式受损或网络拦截了库文件。");
+            status.innerText = "❌ 处理失败";
         }
     }
 }
