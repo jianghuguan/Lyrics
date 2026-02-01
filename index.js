@@ -1,4 +1,4 @@
-// --- 1. 设置与依赖 ---
+// --- 1. 设置与依赖 management ---
 const SETTINGS_KEY = "music_tagger_settings";
 const URLS = {
     id3: "https://unpkg.com/browser-id3-writer@4.4.0/dist/browser-id3-writer.js",
@@ -31,13 +31,13 @@ async function loadLibraries() {
         if (!window.WaveSurfer.Regions) await loadScript(URLS.regions);
         return true;
     } catch (e) {
-        alert("库加载失败，请检查网络");
+        alert("系统错误：无法加载必要的组件库。\n请检查网络连接");
         console.error(e);
         return false;
     }
 }
 
-// --- 2. 弹窗 UI (Flex 布局 + 独立滚动) ---
+// --- 2. 弹窗 UI (屏幕中央 + 内部滚动) ---
 function createCustomPopup(htmlContent) {
     const old = document.getElementById('mt-custom-overlay');
     if (old) old.remove();
@@ -48,7 +48,8 @@ function createCustomPopup(htmlContent) {
         position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
         backgroundColor: 'rgba(0, 0, 0, 0.85)',
         zIndex: 20000,
-        display: 'flex', justifyContent: 'center', alignItems: 'center', // 垂直居中
+        // 【核心】Flex 居中
+        display: 'flex', justifyContent: 'center', alignItems: 'center',
         backdropFilter: 'blur(5px)'
     });
 
@@ -57,12 +58,13 @@ function createCustomPopup(htmlContent) {
     Object.assign(container.style, {
         position: 'relative', 
         width: '1000px', maxWidth: '95%', 
-        height: '90vh', // 固定高度，占屏幕 90%
+        height: '85vh', // 固定高度，确保在屏幕中间
         backgroundColor: '#1e1e1e', border: '1px solid #333', color: '#eee',
         borderRadius: '12px', padding: '20px', 
         boxShadow: '0 10px 40px rgba(0,0,0,0.8)',
-        display: 'flex', flexDirection: 'column', gap: '15px',
-        overflow: 'hidden' // 【关键】禁止整个弹窗滚动，只让内部区域滚动
+        // 【核心】Flex 布局，让内部元素可以自适应高度
+        display: 'flex', flexDirection: 'column', gap: '10px',
+        overflow: 'hidden' // 容器本身不滚动，内部 specific 区域滚动
     });
 
     const closeBtn = document.createElement('div');
@@ -82,9 +84,9 @@ function createCustomPopup(htmlContent) {
     document.body.appendChild(overlay);
 }
 
-// --- 3. 入口 ---
+// --- 3. 插件入口 ---
 jQuery(async () => {
-    console.log("🎵 Music Tagger Loaded (Final Fix)");
+    console.log("🎵 Music Tagger Loaded (Fixed UI)");
     setTimeout(addMusicTaggerButton, 1000);
 });
 
@@ -112,21 +114,20 @@ function openTaggerModal() {
     const settings = getSettings();
     
     const html = `
-        <h3 style="margin:0; border-bottom:1px solid #444; padding-bottom:10px; color:#fff; display:flex; justify-content:space-between; flex-shrink: 0;">
-            <span>🎵 智能歌词剪辑台</span>
-            <span style="font-size:12px; color:#aaa; font-weight:normal; margin-top:5px;">WaveSurfer Engine</span>
+        <h3 style="margin:0; border-bottom:1px solid #444; padding-bottom:10px; color:#fff; flex-shrink: 0;">
+            🎵 智能歌词剪辑台 <span style="font-size:12px; color:#aaa; font-weight:normal;">v3.0</span>
         </h3>
         
-        <!-- 顶部：设置 (分析完成后隐藏) -->
-        <div id="mt-setup-area" style="display:flex; flex-direction:column; gap:15px; overflow-y:auto;">
+        <!-- 顶部设置区 (AI 分析前显示) -->
+        <div id="mt-setup-area" style="display:flex; flex-direction:column; gap:15px; flex-shrink: 0;">
             <div style="display:flex; gap:20px; flex-wrap:wrap;">
                 <div style="flex:1;">
-                    <label class="mt-label" style="color:#ccc; display:block; margin-bottom:5px;">1. Groq API Key:</label>
-                    <input type="password" id="mt-key" value="${settings.apiKey || ''}" placeholder="gsk_..." style="width:100%; padding:8px; background:#333; color:#fff; border:1px solid #555; border-radius:4px;" />
+                    <label class="mt-label" style="color:#ccc;">1. Groq API Key:</label>
+                    <input type="password" id="mt-key" value="${settings.apiKey || ''}" placeholder="gsk_..." style="width:100%; padding:8px; margin-top:5px; background:#333; color:#fff; border:1px solid #555; border-radius:4px;" />
                 </div>
                 <div style="flex:1;">
-                    <label class="mt-label" style="color:#ccc; display:block; margin-bottom:5px;">2. MP3 文件:</label>
-                    <div style="display:flex; gap:10px;">
+                    <label class="mt-label" style="color:#ccc;">2. MP3 文件:</label>
+                    <div style="display:flex; gap:10px; margin-top:5px;">
                         <input type="file" id="mt-file" accept="audio/mp3" style="display:none;" />
                         <button id="mt-file-btn" style="background:#444; color:white; border:1px solid #666; padding:8px 12px; border-radius:4px; cursor:pointer;">📂 选择文件</button>
                         <span id="mt-filename" style="color:#aaa; align-self:center; font-size:12px;">未选择</span>
@@ -134,40 +135,42 @@ function openTaggerModal() {
                 </div>
             </div>
             <div>
-                <label class="mt-label" style="color:#ccc; display:block; margin-bottom:5px;">3. 歌词文本 (可选):</label>
-                <textarea id="mt-lyrics-raw" rows="3" placeholder="粘贴纯歌词文本，AI 将尝试自动对齐..." style="width:100%; background:#333; color:#fff; border:1px solid #555; border-radius:4px; resize:vertical;"></textarea>
+                <label class="mt-label" style="color:#ccc;">3. 歌词文本 (可选):</label>
+                <textarea id="mt-lyrics-raw" rows="3" placeholder="粘贴纯歌词文本，AI 将尝试自动对齐..." style="width:100%; margin-top:5px; background:#333; color:#fff; border:1px solid #555; border-radius:4px; resize:none;"></textarea>
             </div>
-            <button id="mt-process-btn" style="width:100%; padding:12px; background:#2b5e99; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold;">⚡ 开始 AI 分析 & 加载编辑器</button>
+            <button id="mt-process-btn" style="width:100%; padding:12px; background:#2b5e99; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold;">⚡ 开始 AI 分析</button>
             <div id="mt-status" style="color:cyan; font-weight:bold; height:20px; font-size:14px;"></div>
         </div>
 
-        <!-- 底部：编辑器区域 (Flex 列布局) -->
-        <div id="mt-editor-area" style="display:none; flex-direction:column; flex:1; overflow:hidden; border-top:1px solid #444; padding-top:10px;">
+        <!-- 编辑器区域 (初始隐藏，Flex 布局) -->
+        <div id="mt-editor-area" style="display:none; flex-direction:column; flex:1; overflow:hidden;">
             
-            <!-- 固定控制区 -->
-            <div style="display:flex; gap:15px; margin-bottom:10px; align-items:center; flex-shrink: 0;">
-                <button id="mt-play-pause" style="background:#28a745; color:white; border:none; padding:5px 15px; border-radius:4px; cursor:pointer;">▶ 播放/暂停</button>
-                <div style="display:flex; align-items:center; gap:5px; color:#ccc; font-size:12px;">
-                    <span>🔍 缩放:</span>
-                    <input type="range" id="mt-zoom" min="10" max="300" value="50" style="width:100px;">
+            <!-- 1. 顶部固定区：播放控制 + 波形 -->
+            <div style="flex-shrink: 0; border-bottom:1px solid #333; padding-bottom:10px; margin-bottom:10px;">
+                <div style="display:flex; gap:15px; margin-bottom:10px; align-items:center;">
+                    <button id="mt-play-pause" style="background:#28a745; color:white; border:none; padding:5px 15px; border-radius:4px; cursor:pointer;">▶ 播放/暂停</button>
+                    <div style="display:flex; align-items:center; gap:5px; color:#ccc; font-size:12px;">
+                        <span>🔍 缩放:</span>
+                        <input type="range" id="mt-zoom" min="10" max="300" value="50" style="width:100px;">
+                    </div>
+                    <div style="color:#aaa; font-size:12px; margin-left:auto;">
+                        ✋ 拖动两端 | 👆 点击波形
+                    </div>
                 </div>
-                <div style="color:#aaa; font-size:12px; margin-left:auto;">
-                    ✋ 拖动两端 | 👆 点击跳转 | 🖱 滚轮查看列表
-                </div>
+                <!-- 波形 -->
+                <div id="mt-waveform" style="width:100%; height:120px; background:#000; border-radius:4px; cursor:text;"></div>
             </div>
-
-            <!-- 波形区 (固定高度，禁止触摸滚动以修复拖拽断触) -->
-            <div id="mt-waveform" style="width:100%; height:120px; background:#000; border-radius:4px; margin-bottom:10px; flex-shrink: 0; touch-action: none;"></div>
             
-            <!-- 歌词列表 (独立滚动区域) -->
-            <div style="flex:1; overflow-y:auto; background:#141414; padding:10px; border-radius:4px; border:1px solid #333; margin-bottom:10px;">
+            <!-- 2. 中间滚动区：歌词列表 (独立滚动) -->
+            <!-- 【核心修复】设置 overflow-y:auto 让这里可以独立上下滑动 -->
+            <div style="flex:1; overflow-y:auto; background:#141414; padding:5px; border-radius:4px; border:1px solid #333; margin-bottom:10px;">
                 <div id="mt-rows-container"></div>
             </div>
 
-            <!-- 底部按钮区 -->
-            <div style="display:flex; gap:10px; justify-content:flex-end; flex-shrink: 0;">
-                <button id="mt-download-lrc" style="background:#555; padding:8px 15px; color:white; border:none; border-radius:4px; cursor:pointer;">下载 .lrc</button>
-                <button id="mt-download-mp3" style="background:#2b5e99; padding:8px 15px; color:white; border:none; border-radius:4px; cursor:pointer;">💾 导出 MP3</button>
+            <!-- 3. 底部固定区：导出 -->
+            <div style="flex-shrink: 0; display:flex; gap:10px; justify-content:flex-end;">
+                <button id="mt-download-lrc" style="background:#555; padding:10px 20px; color:white; border:none; border-radius:4px; cursor:pointer;">下载 .lrc</button>
+                <button id="mt-download-mp3" style="background:#2b5e99; padding:10px 20px; color:white; border:none; border-radius:4px; cursor:pointer;">💾 导出 MP3</button>
             </div>
         </div>
     `;
@@ -204,7 +207,6 @@ function openTaggerModal() {
     document.getElementById('mt-download-mp3').onclick = () => exportLrc(true);
 }
 
-// --- 5. 核心逻辑 ---
 async function runAIAndInitEditor() {
     const file = document.getElementById('mt-file').files[0];
     const apiKey = document.getElementById('mt-key').value;
@@ -213,7 +215,7 @@ async function runAIAndInitEditor() {
 
     if (!file || !apiKey) return alert("请先选择文件并填写 Key");
 
-    status.innerText = "⏳ 正在分析 (Groq Whisper)...";
+    status.innerText = "⏳ 正在上传 Groq 进行分析...";
     document.getElementById('mt-process-btn').disabled = true;
 
     try {
@@ -229,12 +231,12 @@ async function runAIAndInitEditor() {
         if (!response.ok) throw new Error((await response.json()).error?.message || "API Error");
         const data = await response.json();
 
-        status.innerText = "✅ 渲染编辑器...";
-        document.getElementById('mt-editor-area').style.display = 'flex';
-        document.getElementById('mt-setup-area').style.display = 'none'; // 隐藏设置，腾出空间
+        status.innerText = "✅ 分析完成，渲染编辑器...";
+        document.getElementById('mt-setup-area').style.display = 'none'; 
+        document.getElementById('mt-editor-area').style.display = 'flex'; // Flex显示
         
         await initWaveSurfer(file, data.segments, rawText);
-        status.innerText = ""; 
+        status.innerText = "🎵 就绪！";
 
     } catch (e) {
         status.innerText = "❌ 错误: " + e.message;
@@ -242,14 +244,14 @@ async function runAIAndInitEditor() {
     }
 }
 
-// --- 6. WaveSurfer 编辑器 (修复代码乱码 + 拖拽流畅) ---
+// --- WaveSurfer 核心配置 ---
 async function initWaveSurfer(fileBlob, segments, userRawText) {
     if (window.mtWaveSurfer) window.mtWaveSurfer.destroy();
-    
+    if (!window.WaveSurfer || !window.WaveSurfer.Regions) return alert("组件加载中...");
+
     const WaveSurfer = window.WaveSurfer;
     const RegionsPlugin = window.WaveSurfer.Regions;
 
-    // 创建 WaveSurfer
     const ws = WaveSurfer.create({
         container: '#mt-waveform',
         waveColor: '#4F4A85',
@@ -262,7 +264,9 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         cursorColor: '#ff0000',
         cursorWidth: 2,
         normalize: true,
-        backend: 'WebAudio'
+        backend: 'WebAudio',
+        // 关键：优化滚动性能
+        minPxPerSec: 50, 
     });
 
     const wsRegions = ws.registerPlugin(RegionsPlugin.create());
@@ -275,55 +279,52 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
     container.innerHTML = "";
 
     ws.on('ready', () => {
+        // 初始化时不缩放太大，防止卡顿
         ws.zoom(50);
         
         segments.forEach((seg, index) => {
             const text = userLines[index] || seg.text.trim();
             const color = (index % 2 === 0) ? "rgba(0, 123, 255, 0.2)" : "rgba(40, 167, 69, 0.2)";
 
-            // 【修复】使用 DOM 元素作为 content，避免显示 HTML 代码
-            const label = document.createElement('div');
-            label.textContent = text;
-            Object.assign(label.style, {
-                color: '#fff', fontSize: '11px', padding: '4px',
-                overflow: 'hidden', whiteSpace: 'nowrap', 
-                pointerEvents: 'none', // 让点击透传给 Region
-                textShadow: '0 1px 2px #000'
+            // 【核心修复】使用 DOM 元素作为 content，解决“爆代码”问题
+            const labelEl = document.createElement('div');
+            Object.assign(labelEl.style, {
+                color: '#fff', fontSize: '10px', padding: '2px', 
+                whiteSpace: 'nowrap', overflow: 'hidden', pointerEvents: 'none'
             });
+            labelEl.textContent = text; // 安全赋值文本
 
             const region = wsRegions.addRegion({
                 id: `seg-${index}`,
                 start: seg.start,
                 end: seg.end,
-                content: label, // 传入 DOM 对象
+                content: labelEl, // 传入 DOM 元素
                 color: color,
                 drag: false,   // 禁止整体拖动
-                resize: true,  // 允许两端拖动
+                resize: true,  // 允许边缘拖动
             });
 
-            // 列表行
+            // 创建列表行
             const row = document.createElement('div');
             row.id = `row-${region.id}`;
-            row.style.cssText = "display:flex; gap:10px; margin-bottom:8px; align-items:center; background:#222; padding:10px; border-radius:6px;";
+            row.style.cssText = "display:flex; gap:10px; margin-bottom:5px; align-items:center; background:#222; padding:8px; border-radius:4px;";
             row.innerHTML = `
-                <span style="color:#666; font-size:14px; width:25px; font-weight:bold;">${index+1}</span>
-                <input type="text" class="mt-row-text" value="${text}" style="flex:1; background:#333; color:#eee; border:none; padding:8px; border-radius:4px; font-size:14px;">
-                <span class="mt-time-disp" style="font-family:monospace; color:#aaa; font-size:13px; min-width:90px; text-align:right;">${formatTime(seg.start)}</span>
+                <span style="color:#666; font-size:12px; width:20px; font-weight:bold;">${index+1}</span>
+                <input type="text" class="mt-row-text" value="${text}" style="flex:1; background:#333; color:#eee; border:none; padding:6px; border-radius:3px; font-size:13px;">
+                <span class="mt-time-disp" style="font-family:monospace; color:#aaa; font-size:12px; min-width:80px; text-align:right;">${formatTime(seg.start)}</span>
             `;
             
-            // 联动：输入框改字 -> 更新波形上的 DOM 文本
+            // 联动：修改文本
             row.querySelector('input').addEventListener('input', (e) => {
                 const newText = e.target.value;
-                label.textContent = newText; // 直接修改 DOM，不再 setOptions，防止重绘闪烁
+                labelEl.textContent = newText; // 直接更新 DOM 节点的文本
             });
-
-            // 联动：点击行 -> 只跳转播放，不滚动列表
+            
+            // 【核心修复】点击行：只跳转播放头，不自动滚动列表，避免“跳动”
             row.onclick = (e) => {
                 if(e.target.tagName !== 'INPUT') {
                     ws.setTime(region.start);
-                    // 【修复】移除 row.scrollIntoView，保持视图稳定
-                    
-                    // 仅高亮当前行
+                    // 高亮
                     document.querySelectorAll('#mt-rows-container > div').forEach(d => d.style.background = '#222');
                     row.style.background = '#334455';
                 }
@@ -332,33 +333,29 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         });
     });
 
-    // 波形点击 -> 跳转播放 & 高亮列表（带滚动，方便找）
+    // 【核心修复】点击波形：播放，高亮行，但禁止 scrollIntoView
     wsRegions.on('region-clicked', (region, e) => {
-        e.stopPropagation();
-        region.play(); 
-        
+        e.stopPropagation(); 
+        region.play();
         const row = document.getElementById(`row-${region.id}`);
         if(row) {
             document.querySelectorAll('#mt-rows-container > div').forEach(d => d.style.background = '#222');
             row.style.background = '#334455';
-            // 只有点击波形时，才自动滚动列表，方便用户知道点到哪句了
-            row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            // 注释掉自动滚动，满足需求“不要跳转到下面的时间戳”
+            // row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
     });
 
-    // 拖动波形边缘 -> 实时更新时间
+    // 拖拽更新时间
     wsRegions.on('region-updated', (region) => {
         const row = document.getElementById(`row-${region.id}`);
         if (row) {
             row.querySelector('.mt-time-disp').innerText = formatTime(region.start);
-            // 拖动时不自动滚动，防止列表乱跳
-            document.querySelectorAll('#mt-rows-container > div').forEach(d => d.style.background = '#222');
-            row.style.background = '#334455';
         }
     });
 }
 
-// --- 7. 导出 ---
+// --- 导出逻辑 ---
 async function exportLrc(embed) {
     if (!window.mtRegions) return;
     const regions = window.mtRegions.getRegions().sort((a, b) => a.start - b.start);
@@ -375,14 +372,14 @@ async function exportLrc(embed) {
         download(new Blob([lrcContent]), baseName + ".lrc");
     } else {
         const status = document.getElementById('mt-status');
-        status.innerText = "⏳ 写入 ID3 标签...";
+        status.innerText = "⏳ 写入标签...";
         try {
             const writer = new window.ID3Writer(await file.arrayBuffer());
             writer.setFrame('USLT', { description: '', lyrics: lrcContent, language: 'eng' });
             writer.addTag();
             download(new Blob([writer.getBlob()]), baseName + "_lyrics.mp3");
-            status.innerText = "✅ 成功! 建议同时下载 .lrc";
-        } catch(e) { status.innerText = "❌ 写入失败: " + e.message; }
+            status.innerText = "✅ 完成";
+        } catch(e) { status.innerText = "❌ 失败: " + e.message; }
     }
 }
 
