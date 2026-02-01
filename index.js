@@ -32,55 +32,58 @@ async function loadID3Library() {
     });
 }
 
-// --- 2. 核心：样式修复后的自制弹窗 ---
+// --- 2. 核心：样式修复 (改为顶部对齐) ---
 function createCustomPopup(htmlContent) {
     const old = document.getElementById('mt-custom-overlay');
     if (old) old.remove();
 
-    // 1. 遮罩层 (全屏，负责居中)
+    // 1. 遮罩层
     const overlay = document.createElement('div');
     overlay.id = 'mt-custom-overlay';
     Object.assign(overlay.style, {
         position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
-        backgroundColor: 'rgba(0, 0, 0, 0.6)', // 黑色半透明背景
-        zIndex: 19000, // 确保在最上层
+        backgroundColor: 'rgba(0, 0, 0, 0.7)', // 深色背景
+        zIndex: 20000, // 极高层级
         display: 'flex', 
         justifyContent: 'center', // 水平居中
-        alignItems: 'center',     // 垂直居中
-        backdropFilter: 'blur(2px)'
+        alignItems: 'flex-start', // 【重点修改】垂直靠上对齐
+        paddingTop: '80px',       // 【重点修改】距离顶部 80px，确保不被遮挡
+        backdropFilter: 'blur(3px)'
     });
 
-    // 2. 弹窗容器 (限制高度，添加实心背景)
+    // 2. 弹窗容器
     const container = document.createElement('div');
-    container.className = 'mt-modal'; // 保留 CSS 类以便应用部分样式
+    container.className = 'mt-modal'; 
     
     Object.assign(container.style, {
         position: 'relative',
         width: '600px', 
         maxWidth: '90%', 
-        maxHeight: '85vh',       // 最大高度为屏幕的 85%
-        overflowY: 'auto',       // 内容太多时，弹窗内部滚动，而不会超出屏幕
-        backgroundColor: '#202124', // 【修复】强制深灰色背景，防止透明
-        backgroundImage: 'var(--SmartThemeBackground)', // 尝试使用主题背景色
-        color: 'var(--SmartThemeBodyColor, #fff)',
-        borderRadius: '10px',
+        // 限制高度，预留底部空间
+        maxHeight: '80vh',       
+        overflowY: 'auto',       // 内部滚动
+        
+        // 强制外观样式
+        backgroundColor: '#1a1b1e', // 实心深灰
+        border: '1px solid #444',
+        color: '#eee',
+        borderRadius: '8px',
         padding: '20px',
-        boxShadow: '0 5px 20px rgba(0,0,0,0.5)',
+        boxShadow: '0 10px 30px rgba(0,0,0,0.8)',
         display: 'flex', 
         flexDirection: 'column',
-        gap: '10px'
+        gap: '12px'
     });
 
     // 关闭按钮
     const closeBtn = document.createElement('div');
     closeBtn.innerHTML = '❌';
     Object.assign(closeBtn.style, {
-        position: 'absolute', top: '10px', right: '15px',
+        position: 'absolute', top: '15px', right: '15px',
         cursor: 'pointer', fontSize: '18px', zIndex: 10,
-        opacity: '0.7'
+        color: '#fff', opacity: '0.8'
     });
     closeBtn.onmouseover = () => closeBtn.style.opacity = '1';
-    closeBtn.onmouseout = () => closeBtn.style.opacity = '0.7';
     closeBtn.onclick = () => overlay.remove();
 
     container.innerHTML = htmlContent;
@@ -88,6 +91,7 @@ function createCustomPopup(htmlContent) {
     overlay.appendChild(container);
     document.body.appendChild(overlay);
     
+    // 点击背景关闭
     overlay.addEventListener('click', (e) => {
         if (e.target === overlay) overlay.remove();
     });
@@ -95,7 +99,7 @@ function createCustomPopup(htmlContent) {
 
 // --- 3. 插件入口 ---
 jQuery(async () => {
-    console.log("🎵 Music Tagger Loaded (Fixed Style)");
+    console.log("🎵 Music Tagger Loaded (Top-Aligned)");
     setTimeout(addMusicTaggerButton, 1000);
 });
 
@@ -120,31 +124,31 @@ function openTaggerModal() {
     const settings = getSettings();
     
     const html = `
-        <h3 style="margin:0 0 10px 0; border-bottom:1px solid #555; padding-bottom:10px;">🎵 MP3 歌词嵌入工具</h3>
+        <h3 style="margin:0 0 5px 0; border-bottom:1px solid #555; padding-bottom:10px; color:#fff;">🎵 MP3 歌词工具</h3>
         
         <div>
-            <label class="mt-label">1. Groq API Key:</label>
-            <input type="password" id="mt-key" class="text_pole mt-input" value="${settings.apiKey || ''}" placeholder="gsk_..." style="padding:8px;" />
+            <label class="mt-label" style="color:#ccc;">1. Groq API Key:</label>
+            <input type="password" id="mt-key" class="text_pole mt-input" value="${settings.apiKey || ''}" placeholder="gsk_..." style="padding:8px; background:#333; color:#fff; border:1px solid #555;" />
         </div>
 
         <div>
-            <label class="mt-label">2. MP3 文件:</label>
-            <input type="file" id="mt-file" accept="audio/mp3" class="mt-input" style="padding:5px 0;" />
+            <label class="mt-label" style="color:#ccc;">2. MP3 文件:</label>
+            <input type="file" id="mt-file" accept="audio/mp3" class="mt-input" style="padding:5px 0; color:#fff;" />
         </div>
 
         <div>
-            <label class="mt-label">3. 粘贴纯文本歌词:</label>
-            <textarea id="mt-lyrics-raw" class="text_pole mt-input" rows="5" placeholder="粘贴歌词..."></textarea>
+            <label class="mt-label" style="color:#ccc;">3. 粘贴纯文本歌词 (一行一句):</label>
+            <textarea id="mt-lyrics-raw" class="text_pole mt-input" rows="5" placeholder="粘贴歌词..." style="background:#333; color:#fff; border:1px solid #555;"></textarea>
         </div>
 
-        <button id="mt-process-btn" class="mt-btn" style="width:100%; margin-top:10px;">⚡ 开始 AI 分析</button>
+        <button id="mt-process-btn" class="mt-btn" style="width:100%; margin-top:10px; padding:10px; background:#2b5e99; color:white; border:none; border-radius:4px; cursor:pointer;">⚡ 开始 AI 分析</button>
         <div id="mt-status" style="color:cyan; margin:5px 0; font-weight:bold; height:20px;"></div>
 
         <div id="mt-editor-area" style="display:none; flex-direction:column; overflow:hidden; flex:1; min-height:200px;">
-            <div id="mt-rows-container" class="mt-scroll-area" style="max-height: 300px; overflow-y:auto;"></div>
-            <div style="margin-top:10px; display:flex; gap:10px; justify-content:flex-end;">
-                <button id="mt-download-lrc" class="mt-btn" style="background:#555;">仅 LRC</button>
-                <button id="mt-download-mp3" class="mt-btn">💾 导出 MP3</button>
+            <div id="mt-rows-container" class="mt-scroll-area" style="max-height: 300px; overflow-y:auto; background:#111; padding:10px; border:1px solid #444;"></div>
+            <div style="margin-top:15px; display:flex; gap:10px; justify-content:flex-end;">
+                <button id="mt-download-lrc" class="mt-btn" style="background:#444; padding:8px 15px; color:white; border:none; border-radius:4px; cursor:pointer;">仅 LRC</button>
+                <button id="mt-download-mp3" class="mt-btn" style="background:#2b5e99; padding:8px 15px; color:white; border:none; border-radius:4px; cursor:pointer;">💾 导出 MP3</button>
             </div>
         </div>
     `;
@@ -174,7 +178,7 @@ async function runAIAnalysis() {
     if (!fileInput.files[0]) { status.innerText = "❌ 请选择文件"; return; }
     if (!apiKey) { status.innerText = "❌ 请输入 Key"; return; }
 
-    status.innerText = "⏳ 分析中...";
+    status.innerText = "⏳ 正在上传 Groq 分析...";
     document.getElementById('mt-process-btn').disabled = true;
 
     try {
@@ -190,7 +194,7 @@ async function runAIAnalysis() {
         if (!response.ok) throw new Error((await response.json()).error?.message || "API Error");
 
         const data = await response.json();
-        status.innerText = "✅ 完成！";
+        status.innerText = "✅ 分析完成！";
         renderEditor(data.segments, rawText);
         document.getElementById('mt-editor-area').style.display = 'flex';
 
@@ -214,10 +218,13 @@ function renderEditor(segments, userText) {
         const txt = userLines[index] !== undefined ? userLines[index] : seg.text.trim();
 
         row.innerHTML = `
-            <input type="text" class="mt-time" value="${timeStr}">
-            <input type="text" class="mt-text" value="${txt}">
-            <div style="cursor:pointer; padding:5px;" onclick="this.parentElement.remove()">❌</div>
+            <input type="text" class="mt-time" value="${timeStr}" style="width:100px; background:#222; color:#fff; border:1px solid #444; padding:5px;">
+            <input type="text" class="mt-text" value="${txt}" style="flex:1; background:#222; color:#fff; border:1px solid #444; padding:5px;">
+            <div style="cursor:pointer; padding:5px; color:#ff6666;" onclick="this.parentElement.remove()">❌</div>
         `;
+        row.style.display = "flex";
+        row.style.gap = "8px";
+        row.style.marginBottom = "5px";
         container.appendChild(row);
     });
 }
