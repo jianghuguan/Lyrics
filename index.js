@@ -43,33 +43,21 @@ function createCustomPopup(htmlContent) {
     const old = document.getElementById('mt-custom-overlay');
     if (old) old.remove();
 
-    // 样式注入：优化拖拽手感 + 滚动条美化
     const style = document.createElement('style');
     style.innerHTML = `
-        /* 增加拖拽手柄宽度，防止断触 */
         .wavesurfer-region-handle {
             width: 12px !important; 
             background-color: rgba(255, 255, 255, 0.4) !important;
         }
-        /* 禁止选中文字 */
         .mt-no-select {
             user-select: none;
             -webkit-user-select: none;
         }
-        /* 自定义滚动条样式，让列表更精致 */
-        #mt-lyrics-scroll-area::-webkit-scrollbar {
-            width: 8px;
-        }
-        #mt-lyrics-scroll-area::-webkit-scrollbar-track {
-            background: #1a1a1a;
-        }
-        #mt-lyrics-scroll-area::-webkit-scrollbar-thumb {
-            background: #444;
-            border-radius: 4px;
-        }
-        #mt-lyrics-scroll-area::-webkit-scrollbar-thumb:hover {
-            background: #555;
-        }
+        /* 滚动条美化 */
+        #mt-lyrics-scroll-area::-webkit-scrollbar { width: 8px; }
+        #mt-lyrics-scroll-area::-webkit-scrollbar-track { background: #1a1a1a; }
+        #mt-lyrics-scroll-area::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
+        #mt-lyrics-scroll-area::-webkit-scrollbar-thumb:hover { background: #555; }
     `;
     document.head.appendChild(style);
 
@@ -88,14 +76,13 @@ function createCustomPopup(htmlContent) {
     Object.assign(container.style, {
         position: 'relative', 
         width: '1000px', maxWidth: '95%', 
-        // 保持整体有最大高度，但内部布局优化
         maxHeight: '92vh', 
         height: 'auto',
         backgroundColor: '#1e1e1e', border: '1px solid #333', color: '#eee',
         borderRadius: '12px', padding: '25px', 
         boxShadow: '0 10px 40px rgba(0,0,0,0.8)',
         display: 'flex', flexDirection: 'column', gap: '15px', 
-        overflowY: 'auto' // 整体虽然可滚，但主要靠内部区域滚动
+        overflowY: 'auto' 
     });
 
     const closeBtn = document.createElement('div');
@@ -117,7 +104,7 @@ function createCustomPopup(htmlContent) {
 
 // --- 3. 插件入口 ---
 jQuery(async () => {
-    console.log("🎵 Music Tagger Loaded (Fixed Scroll Area Ver)");
+    console.log("🎵 Music Tagger Loaded (Performance Optimized)");
     setTimeout(addMusicTaggerButton, 1000);
 });
 
@@ -150,7 +137,6 @@ function openTaggerModal() {
             <span style="font-size:12px; color:#aaa; font-weight:normal; margin-top:5px;">WaveSurfer Engine</span>
         </h3>
         
-        <!-- 顶部：设置与上传 -->
         <div id="mt-setup-area" style="display:flex; gap:20px; flex-wrap:wrap;">
             <div style="flex:1; min-width:200px;">
                 <label class="mt-label" style="color:#ccc; display:block; margin-bottom:5px;">1. Groq API Key:</label>
@@ -174,7 +160,6 @@ function openTaggerModal() {
         <button id="mt-process-btn" style="width:100%; padding:10px; background:#2b5e99; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold;">⚡ 开始 AI 分析 & 加载编辑器</button>
         <div id="mt-status" style="color:cyan; font-weight:bold; height:20px; font-size:14px;"></div>
 
-        <!-- 底部：编辑器区域 -->
         <div id="mt-editor-area" style="display:none; flex-direction:column; flex:1; border-top:1px solid #444; padding-top:10px;">
             
             <!-- 播放控制栏 (sticky) -->
@@ -193,21 +178,19 @@ function openTaggerModal() {
             <div id="mt-waveform" style="width:100%; height:120px; background:#000; border-radius:4px; margin-bottom:15px; cursor:text;"></div>
             
             <!-- 歌词列表容器 -->
-            <!-- 【核心修改】固定高度 + overflow-y: auto + contain -->
             <div id="mt-lyrics-scroll-area" style="
                 background: #141414; 
                 padding: 10px; 
                 border-radius: 4px; 
                 border: 1px solid #333; 
-                height: 450px;           /* 固定高度 */
-                overflow-y: auto;        /* 独立滚动条 */
-                overscroll-behavior: contain; /* 防止滚动传导到父级 */
+                height: 450px; 
+                overflow-y: auto; 
+                overscroll-behavior: contain; 
                 position: relative;
             ">
                 <div id="mt-rows-container"></div>
             </div>
 
-            <!-- 导出按钮 -->
             <div style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end; padding-bottom:10px;">
                 <button id="mt-download-lrc" style="background:#555; padding:10px 20px; color:white; border:none; border-radius:4px; cursor:pointer;">下载 .lrc (推荐)</button>
                 <button id="mt-download-mp3" style="background:#2b5e99; padding:10px 20px; color:white; border:none; border-radius:4px; cursor:pointer;">💾 导出内嵌 MP3</button>
@@ -285,7 +268,7 @@ async function runAIAndInitEditor() {
     }
 }
 
-// --- 6. WaveSurfer 编辑器配置 ---
+// --- 6. WaveSurfer 编辑器配置 (性能优化版) ---
 async function initWaveSurfer(fileBlob, segments, userRawText) {
     if (window.mtWaveSurfer) window.mtWaveSurfer.destroy();
     if (!window.WaveSurfer || !window.WaveSurfer.Regions) {
@@ -305,9 +288,15 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         barWidth: 2,
         barGap: 1,
         barRadius: 2,
+        // 【关键优化 1】降低采样率，加快长音频渲染
+        sampleRate: 3000, 
+        // 【关键优化 2】强制 1倍像素渲染，极大降低高分屏显卡负担，解决卡顿
+        pixelRatio: 1, 
+        normalize: true,
+        autoScroll: true, // 开启原生自动滚动
+        autoCenter: true,
         cursorColor: '#ff0000',
         cursorWidth: 2,
-        normalize: true,
         backend: 'WebAudio'
     });
 
@@ -319,7 +308,7 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
 
     const userLines = userRawText.split('\n').filter(l => l.trim());
     const container = document.getElementById('mt-rows-container');
-    const scrollArea = document.getElementById('mt-lyrics-scroll-area'); // 获取滚动容器
+    const scrollArea = document.getElementById('mt-lyrics-scroll-area');
     container.innerHTML = "";
 
     ws.on('ready', () => {
@@ -335,8 +324,8 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
                 end: seg.end,
                 content: `<div style="color:#fff; font-size:10px; padding:2px; overflow:hidden; white-space:nowrap; pointer-events:none;">${text}</div>`,
                 color: color,
-                drag: false,   // 禁止整体拖动
-                resize: true,  // 允许边缘拖动
+                drag: false,   
+                resize: true,  
             });
 
             const row = document.createElement('div');
@@ -367,32 +356,30 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         region.play(); 
     });
 
-    // 【核心】独立容器内平滑滚动，不影响整体布局
     let lastActiveRegionId = null;
     ws.on('timeupdate', (currentTime) => {
+        // 简单查找，性能开销极低
         const regions = wsRegions.getRegions();
         const activeRegion = regions.find(r => currentTime >= r.start && currentTime < r.end);
 
         if (activeRegion && activeRegion.id !== lastActiveRegionId) {
             lastActiveRegionId = activeRegion.id;
             
-            document.querySelectorAll('#mt-rows-container > div').forEach(d => {
-                d.style.background = '#222';
-                d.style.borderLeftColor = 'transparent';
-            });
+            // 使用 CSS 类来批量清理样式可能更快，但保持 JS 逻辑简单
+            const rows = document.getElementById('mt-rows-container').children;
+            for(let r of rows) {
+                r.style.background = '#222';
+                r.style.borderLeftColor = 'transparent';
+            }
 
             const row = document.getElementById(`row-${activeRegion.id}`);
             if(row) {
                 row.style.background = '#334455';
                 row.style.borderLeftColor = '#007bff';
 
-                // 手动计算滚动位置，确保只滚动歌词列表容器，不震动整个弹窗
                 const containerHeight = scrollArea.clientHeight;
                 const rowTop = row.offsetTop;
                 const rowHeight = row.clientHeight;
-                
-                // 目标是让 row 居中：
-                // ScrollTop = Row位置 - 容器一半高度 + Row一半高度
                 const targetScroll = rowTop - (containerHeight / 2) + (rowHeight / 2);
                 
                 scrollArea.scrollTo({
