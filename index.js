@@ -43,18 +43,32 @@ function createCustomPopup(htmlContent) {
     const old = document.getElementById('mt-custom-overlay');
     if (old) old.remove();
 
-    // 添加全局样式优化拖拽体验
+    // 样式注入：优化拖拽手感 + 滚动条美化
     const style = document.createElement('style');
     style.innerHTML = `
         /* 增加拖拽手柄宽度，防止断触 */
         .wavesurfer-region-handle {
-            width: 10px !important; 
-            background-color: rgba(255, 255, 255, 0.5) !important;
+            width: 12px !important; 
+            background-color: rgba(255, 255, 255, 0.4) !important;
         }
-        /* 禁止选中文字，防止拖拽干扰 */
+        /* 禁止选中文字 */
         .mt-no-select {
             user-select: none;
             -webkit-user-select: none;
+        }
+        /* 自定义滚动条样式，让列表更精致 */
+        #mt-lyrics-scroll-area::-webkit-scrollbar {
+            width: 8px;
+        }
+        #mt-lyrics-scroll-area::-webkit-scrollbar-track {
+            background: #1a1a1a;
+        }
+        #mt-lyrics-scroll-area::-webkit-scrollbar-thumb {
+            background: #444;
+            border-radius: 4px;
+        }
+        #mt-lyrics-scroll-area::-webkit-scrollbar-thumb:hover {
+            background: #555;
         }
     `;
     document.head.appendChild(style);
@@ -70,17 +84,18 @@ function createCustomPopup(htmlContent) {
     });
 
     const container = document.createElement('div');
-    container.className = 'mt-modal mt-no-select'; // 应用禁止选中样式
+    container.className = 'mt-modal mt-no-select';
     Object.assign(container.style, {
         position: 'relative', 
         width: '1000px', maxWidth: '95%', 
-        maxHeight: '90vh', 
+        // 保持整体有最大高度，但内部布局优化
+        maxHeight: '92vh', 
         height: 'auto',
         backgroundColor: '#1e1e1e', border: '1px solid #333', color: '#eee',
         borderRadius: '12px', padding: '25px', 
         boxShadow: '0 10px 40px rgba(0,0,0,0.8)',
         display: 'flex', flexDirection: 'column', gap: '15px', 
-        overflowY: 'auto'
+        overflowY: 'auto' // 整体虽然可滚，但主要靠内部区域滚动
     });
 
     const closeBtn = document.createElement('div');
@@ -102,7 +117,7 @@ function createCustomPopup(htmlContent) {
 
 // --- 3. 插件入口 ---
 jQuery(async () => {
-    console.log("🎵 Music Tagger Loaded (Smooth Drag Ver)");
+    console.log("🎵 Music Tagger Loaded (Fixed Scroll Area Ver)");
     setTimeout(addMusicTaggerButton, 1000);
 });
 
@@ -159,7 +174,7 @@ function openTaggerModal() {
         <button id="mt-process-btn" style="width:100%; padding:10px; background:#2b5e99; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold;">⚡ 开始 AI 分析 & 加载编辑器</button>
         <div id="mt-status" style="color:cyan; font-weight:bold; height:20px; font-size:14px;"></div>
 
-        <!-- 底部：编辑器区域 (初始隐藏) -->
+        <!-- 底部：编辑器区域 -->
         <div id="mt-editor-area" style="display:none; flex-direction:column; flex:1; border-top:1px solid #444; padding-top:10px;">
             
             <!-- 播放控制栏 (sticky) -->
@@ -174,11 +189,21 @@ function openTaggerModal() {
                 </div>
             </div>
 
-            <!-- 波形容器 (增加 padding 防止边缘误触) -->
+            <!-- 波形容器 -->
             <div id="mt-waveform" style="width:100%; height:120px; background:#000; border-radius:4px; margin-bottom:15px; cursor:text;"></div>
             
             <!-- 歌词列表容器 -->
-            <div style="background:#141414; padding:10px; border-radius:4px; border:1px solid #333; min-height: 400px;">
+            <!-- 【核心修改】固定高度 + overflow-y: auto + contain -->
+            <div id="mt-lyrics-scroll-area" style="
+                background: #141414; 
+                padding: 10px; 
+                border-radius: 4px; 
+                border: 1px solid #333; 
+                height: 450px;           /* 固定高度 */
+                overflow-y: auto;        /* 独立滚动条 */
+                overscroll-behavior: contain; /* 防止滚动传导到父级 */
+                position: relative;
+            ">
                 <div id="mt-rows-container"></div>
             </div>
 
@@ -294,6 +319,7 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
 
     const userLines = userRawText.split('\n').filter(l => l.trim());
     const container = document.getElementById('mt-rows-container');
+    const scrollArea = document.getElementById('mt-lyrics-scroll-area'); // 获取滚动容器
     container.innerHTML = "";
 
     ws.on('ready', () => {
@@ -327,54 +353,56 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
                 region.setOptions({ content: `<div style="color:#fff; font-size:10px; padding:2px; overflow:hidden; white-space:nowrap; pointer-events:none;">${newText}</div>` });
             });
             
-            // 点击行，跳转并手动置顶
             row.onclick = (e) => {
                 if(e.target.tagName !== 'INPUT') {
                     ws.setTime(region.start);
-                    // 点击时不做强制置顶滚动，避免乱跳，只在播放时自动跟
                 }
             };
             container.appendChild(row);
         });
     });
 
-    // 【修改】点击 Region：禁止跳动列表，只播放
     wsRegions.on('region-clicked', (region, e) => {
         e.stopPropagation(); 
         region.play(); 
-        // 删除了 scrollIntoView，点击波形不干扰列表视图
     });
 
-    // 【新增】播放时自动滚动歌词列表
+    // 【核心】独立容器内平滑滚动，不影响整体布局
     let lastActiveRegionId = null;
     ws.on('timeupdate', (currentTime) => {
-        // 性能优化：简单的遍历查找当前 Region
-        // 由于 regions 数量有限，find 足够快
         const regions = wsRegions.getRegions();
         const activeRegion = regions.find(r => currentTime >= r.start && currentTime < r.end);
 
         if (activeRegion && activeRegion.id !== lastActiveRegionId) {
             lastActiveRegionId = activeRegion.id;
             
-            // 重置所有样式
             document.querySelectorAll('#mt-rows-container > div').forEach(d => {
                 d.style.background = '#222';
                 d.style.borderLeftColor = 'transparent';
             });
 
-            // 高亮当前行
             const row = document.getElementById(`row-${activeRegion.id}`);
             if(row) {
                 row.style.background = '#334455';
-                row.style.borderLeftColor = '#007bff'; // 蓝色左边框指示
+                row.style.borderLeftColor = '#007bff';
+
+                // 手动计算滚动位置，确保只滚动歌词列表容器，不震动整个弹窗
+                const containerHeight = scrollArea.clientHeight;
+                const rowTop = row.offsetTop;
+                const rowHeight = row.clientHeight;
                 
-                // 【核心】平滑滚动到视图中间（比 start 更自然，能看到上下文）
-                row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                // 目标是让 row 居中：
+                // ScrollTop = Row位置 - 容器一半高度 + Row一半高度
+                const targetScroll = rowTop - (containerHeight / 2) + (rowHeight / 2);
+                
+                scrollArea.scrollTo({
+                    top: targetScroll,
+                    behavior: 'smooth'
+                });
             }
         }
     });
 
-    // 拖动更新时间文本
     wsRegions.on('region-updated', (region) => {
         const row = document.getElementById(`row-${region.id}`);
         if (row) {
