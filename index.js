@@ -1,7 +1,7 @@
 // --- 1. 设置与依赖管理 ---
 const SETTINGS_KEY = "music_tagger_settings";
 const URLS = {
-    // 移除了 id3 库，只保留音频处理核心库
+    // 仅保留音频处理核心库
     wavesurfer: "https://unpkg.com/wavesurfer.js@7.7.1/dist/wavesurfer.min.js",
     regions: "https://unpkg.com/wavesurfer.js@7.7.1/dist/plugins/regions.min.js"
 };
@@ -131,7 +131,8 @@ function createCustomPopup(htmlContent) {
     const container = document.createElement('div');
     container.className = 'mt-modal mt-no-select';
     Object.assign(container.style, {
-        position: 'relative', width: '1000px', maxWidth: '95%', maxHeight: '92vh', height: 'auto',
+        // [修改] maxHeight 调小一点，防止被浏览器底部遮挡
+        position: 'relative', width: '1000px', maxWidth: '95%', maxHeight: '85vh', height: 'auto',
         backgroundColor: '#1e1e1e', border: '1px solid #333', color: '#eee',
         borderRadius: '12px', padding: '25px', boxShadow: '0 10px 40px rgba(0,0,0,0.8)',
         display: 'flex', flexDirection: 'column', gap: '15px', overflowY: 'auto' 
@@ -153,7 +154,7 @@ function createCustomPopup(htmlContent) {
 
 // --- 3. 插件入口 ---
 jQuery(async () => {
-    console.log("🎵 Music Tagger Loaded (LRC Only)");
+    console.log("🎵 Music Tagger Loaded (UI Fix)");
     setTimeout(addMusicTaggerButton, 1000);
 });
 
@@ -179,7 +180,7 @@ function openTaggerModal() {
     const html = `
         <h3 style="margin:0; border-bottom:1px solid #444; padding-bottom:10px; color:#fff; display:flex; justify-content:space-between;">
             <span>🎵 智能歌词剪辑台</span>
-            <span style="font-size:12px; color:#aaa; margin-top:5px;">LRC Export Only</span>
+            <span style="font-size:12px; color:#aaa; margin-top:5px;">LRC Export</span>
         </h3>
         <div id="mt-setup-area" style="display:flex; gap:20px; flex-wrap:wrap;">
             <div style="flex:1; min-width:200px;">
@@ -224,8 +225,8 @@ function openTaggerModal() {
             <div id="mt-lyrics-scroll-area" style="background: #141414; padding: 10px; border-radius: 4px; border: 1px solid #333; height: 450px; overflow-y: auto; overscroll-behavior: contain; position: relative;">
                 <div id="mt-rows-container"></div>
             </div>
-            <div style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end; padding-bottom:10px;">
-                <!-- 删除了 MP3 导出按钮 -->
+            <!-- [修改] padding-bottom 加大到 40px，防止按钮贴底 -->
+            <div style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end; padding-bottom:40px;">
                 <button id="mt-download-lrc" style="background:#2b5e99; padding:10px 20px; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold;">💾 下载 .lrc 歌词文件</button>
             </div>
         </div>
@@ -244,7 +245,6 @@ function openTaggerModal() {
     document.getElementById('mt-zoom').oninput = (e) => { if (window.mtWaveSurfer) window.mtWaveSurfer.zoom(Number(e.target.value)); };
     document.getElementById('mt-play-pause').onclick = () => { if (window.mtWaveSurfer) window.mtWaveSurfer.playPause(); };
     
-    // 只保留 LRC 导出
     document.getElementById('mt-download-lrc').onclick = exportLrc;
 }
 
@@ -403,7 +403,6 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
 
             // 2. 计算理想终点
             let desiredEnd = region.end;
-            // 强制保底长度，防止压扁
             desiredEnd = Math.max(region.end, currentStartPtr + minLen);
 
             // 3. 边界检查
