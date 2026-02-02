@@ -1,7 +1,7 @@
 // --- 1. 设置与依赖管理 ---
 const SETTINGS_KEY = "music_tagger_settings";
 const URLS = {
-    id3: "https://unpkg.com/browser-id3-writer@4.4.0/dist/browser-id3-writer.js",
+    // 移除了 id3 库，只保留音频处理核心库
     wavesurfer: "https://unpkg.com/wavesurfer.js@7.7.1/dist/wavesurfer.min.js",
     regions: "https://unpkg.com/wavesurfer.js@7.7.1/dist/plugins/regions.min.js"
 };
@@ -39,7 +39,6 @@ async function loadLibraries() {
     });
 
     try {
-        await loadScript(URLS.id3);
         if (!window.WaveSurfer) await loadScript(URLS.wavesurfer);
         if (!window.WaveSurfer.Regions) await loadScript(URLS.regions);
         return true;
@@ -55,15 +54,42 @@ function createCustomPopup(htmlContent) {
 
     const style = document.createElement('style');
     style.innerHTML = `
-        /* --- 交互修复 --- */
-        .wavesurfer-region { pointer-events: none !important; z-index: 4; background-color: rgba(255, 255, 255, 0.1) !important; }
-        .wavesurfer-region-content { pointer-events: none !important; }
-        .wavesurfer-region-handle { pointer-events: auto !important; width: 20px !important; background-color: rgba(255, 255, 255, 0.5) !important; z-index: 5; cursor: col-resize !important; }
-        .wavesurfer-region-handle:hover { background-color: rgba(255, 255, 255, 0.9) !important; }
-        #mt-waveform { cursor: grab; }
-        #mt-waveform:active { cursor: grabbing; }
+        /* --- 核心交互修复 --- */
+        
+        /* 1. 歌词条背景：完全穿透，不挡手指/鼠标，确保波形可滑动 */
+        .wavesurfer-region { 
+            pointer-events: none !important; 
+            z-index: 4; 
+            background-color: rgba(255, 255, 255, 0.1) !important;
+        }
+        
+        /* 2. 歌词文字：也不挡鼠标 */
+        .wavesurfer-region-content {
+            pointer-events: none !important;
+        }
 
-        /* UI 样式 */
+        /* 3. 左右手柄：必须开启交互，加宽以便触摸 */
+        .wavesurfer-region-handle { 
+            pointer-events: auto !important; 
+            width: 20px !important; 
+            background-color: rgba(255, 255, 255, 0.5) !important;
+            z-index: 5;
+            cursor: col-resize !important;
+        }
+        /* 手柄悬停高亮 */
+        .wavesurfer-region-handle:hover {
+            background-color: rgba(255, 255, 255, 0.9) !important;
+        }
+
+        /* 4. 波形画布：设置为抓手，提示可拖动 */
+        #mt-waveform {
+            cursor: grab;
+        }
+        #mt-waveform:active {
+            cursor: grabbing;
+        }
+
+        /* 其他 UI 样式 */
         .mt-no-select { user-select: none; -webkit-user-select: none; }
         #mt-lyrics-scroll-area::-webkit-scrollbar { width: 8px; }
         #mt-lyrics-scroll-area::-webkit-scrollbar-track { background: #1a1a1a; }
@@ -72,14 +98,24 @@ function createCustomPopup(htmlContent) {
         #mt-waveform::-webkit-scrollbar-track { background: #111; border-radius: 4px; }
         #mt-waveform::-webkit-scrollbar-thumb { background: #555; border-radius: 5px; border: 2px solid #111; }
         
-        .mt-row-selected { border: 2px solid #ffc107 !important; background-color: #333322 !important; }
+        .mt-row-selected {
+            border: 2px solid #ffc107 !important;
+            background-color: #333322 !important;
+        }
         .mt-row-active { background-color: #334455; }
         
-        .mt-control-btn { background: #444; color: #eee; border: 1px solid #666; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold; }
+        .mt-control-btn {
+            background: #444; color: #eee; border: 1px solid #666; 
+            padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold;
+        }
         .mt-control-btn:hover { background: #555; }
         .mt-control-btn:active { background: #333; }
         
-        .mt-region-label { color: #fff; font-size: 10px; padding: 4px; overflow: hidden; white-space: nowrap; pointer-events: none; text-shadow: 0 1px 2px black; }
+        .mt-region-label {
+            color: #fff; font-size: 10px; padding: 4px;
+            overflow: hidden; white-space: nowrap; pointer-events: none;
+            text-shadow: 0 1px 2px black;
+        }
     `;
     document.head.appendChild(style);
 
@@ -117,7 +153,7 @@ function createCustomPopup(htmlContent) {
 
 // --- 3. 插件入口 ---
 jQuery(async () => {
-    console.log("🎵 Music Tagger Loaded (Deep Clean Fix)");
+    console.log("🎵 Music Tagger Loaded (LRC Only)");
     setTimeout(addMusicTaggerButton, 1000);
 });
 
@@ -143,7 +179,7 @@ function openTaggerModal() {
     const html = `
         <h3 style="margin:0; border-bottom:1px solid #444; padding-bottom:10px; color:#fff; display:flex; justify-content:space-between;">
             <span>🎵 智能歌词剪辑台</span>
-            <span style="font-size:12px; color:#aaa; margin-top:5px;">Deep Clean & Fix</span>
+            <span style="font-size:12px; color:#aaa; margin-top:5px;">LRC Export Only</span>
         </h3>
         <div id="mt-setup-area" style="display:flex; gap:20px; flex-wrap:wrap;">
             <div style="flex:1; min-width:200px;">
@@ -180,7 +216,7 @@ function openTaggerModal() {
             </div>
             
             <div style="color:#aaa; font-size:12px; margin-bottom:5px;">
-                🖱️ <b>双击</b> 波形可选中。使用上方对齐按钮可触发<b>连锁挤压</b>，确保无重叠。
+                🖱️ <b>双击</b> 波形可选中。使用上方对齐按钮可触发<b>连锁挤压</b>，确保无重叠且每句保留时长。
             </div>
 
             <div id="mt-waveform" style="width: 100%; height: 135px; background: #000; border-radius: 4px; margin-bottom: 15px; overflow-x: auto; overflow-y: hidden;"></div>
@@ -189,8 +225,8 @@ function openTaggerModal() {
                 <div id="mt-rows-container"></div>
             </div>
             <div style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end; padding-bottom:10px;">
-                <button id="mt-download-lrc" style="background:#555; padding:10px 20px; color:white; border:none; border-radius:4px; cursor:pointer;">下载 .lrc (BOM修复)</button>
-                <button id="mt-download-mp3" style="background:#2b5e99; padding:10px 20px; color:white; border:none; border-radius:4px; cursor:pointer;">💾 导出内嵌 MP3 (强力修复)</button>
+                <!-- 删除了 MP3 导出按钮 -->
+                <button id="mt-download-lrc" style="background:#2b5e99; padding:10px 20px; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold;">💾 下载 .lrc 歌词文件</button>
             </div>
         </div>
     `;
@@ -207,8 +243,9 @@ function openTaggerModal() {
     document.getElementById('mt-process-btn').onclick = runAIAndInitEditor;
     document.getElementById('mt-zoom').oninput = (e) => { if (window.mtWaveSurfer) window.mtWaveSurfer.zoom(Number(e.target.value)); };
     document.getElementById('mt-play-pause').onclick = () => { if (window.mtWaveSurfer) window.mtWaveSurfer.playPause(); };
-    document.getElementById('mt-download-lrc').onclick = () => exportLrc(false);
-    document.getElementById('mt-download-mp3').onclick = () => exportLrc(true);
+    
+    // 只保留 LRC 导出
+    document.getElementById('mt-download-lrc').onclick = exportLrc;
 }
 
 // --- 5. AI 处理 ---
@@ -282,7 +319,7 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
     window.mtRegions = wsRegions;
 
     let currentSelectedRegionId = null; 
-    let isSyncing = false; 
+    let isSyncing = false; // 全局锁
 
     const userLines = userRawText.split('\n').filter(l => l.trim());
     const container = document.getElementById('mt-rows-container');
@@ -346,34 +383,41 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         Array.from(rows).forEach((row, i) => { row.querySelector('.mt-idx').innerText = i + 1; });
     }
 
-    // --- 核心：连锁挤压 ---
+    // --- 核心算法：连锁挤压 (Cascade Push) ---
     function cascadePush(startIdx, newStart, enforceMinLen) {
         if (startIdx >= wsRegions.getRegions().length) return;
         
         const allRegions = wsRegions.getRegions().sort((a, b) => a.start - b.start);
         const totalDuration = ws.getDuration();
-        const minLen = 5.0; 
+        const minLen = 5.0; // 用户要求的保底 5 秒
 
         let currentStartPtr = newStart;
 
         for (let i = startIdx; i < allRegions.length; i++) {
             const region = allRegions[i];
             
+            // 1. 设置当前 region 的起点
             if (Math.abs(region.start - currentStartPtr) > 0.001) {
                 region.setOptions({ start: currentStartPtr });
             }
 
+            // 2. 计算理想终点
             let desiredEnd = region.end;
-            // 只要发生了挤压，就保证最小长度
+            // 强制保底长度，防止压扁
             desiredEnd = Math.max(region.end, currentStartPtr + minLen);
 
+            // 3. 边界检查
             if (desiredEnd > totalDuration) desiredEnd = totalDuration;
+
+            // 4. 设置终点
             if (Math.abs(region.end - desiredEnd) > 0.001) {
                 region.setOptions({ end: desiredEnd });
             }
             
+            // 5. 更新指针，准备处理下一个
             currentStartPtr = desiredEnd;
 
+            // 6. UI 更新
             const row = document.getElementById(`row-${region.id}`);
             if(row) row.querySelector('.mt-time-disp').innerText = formatTime(region.start);
         }
@@ -396,7 +440,7 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
                 end = start + len;
                 text = userLine || seg.text.trim();
             } else {
-                end = start + 5.0; 
+                end = start + 5.0; // 默认给5秒
                 text = userLine || "MISSING";
             }
             if (end > duration) end = duration;
@@ -416,6 +460,7 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         updateIndices();
     });
 
+    // --- 双击波形 ---
     document.getElementById('mt-waveform').ondblclick = (e) => {
         const clickTime = ws.getCurrentTime();
         const regions = wsRegions.getRegions().sort((a,b) => a.start - b.start);
@@ -426,7 +471,7 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
             const lastRegion = regions[regions.length - 1];
             let start = lastRegion ? lastRegion.end : 0;
             const newRegion = wsRegions.addRegion({
-                start: start, end: start + 5,
+                start: start, end: start + 5, // 新建的也给5秒
                 content: createContentEl("新歌词"),
                 color: "rgba(255, 255, 255, 0.3)", drag: false, resize: true
             });
@@ -438,6 +483,7 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         }
     };
 
+    // --- 拖动手柄时的普通连动 (Basic Chain Sync) ---
     wsRegions.on('region-updated', (region) => {
         if (isSyncing) return; 
         isSyncing = true; 
@@ -459,6 +505,7 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         if(row) row.querySelector('.mt-time-disp').innerText = formatTime(region.start);
     });
 
+    // --- 按钮：左对齐 (强力连锁) ---
     document.getElementById('mt-set-start').onclick = () => {
         if (!currentSelectedRegionId) return alert("请先双击选中一行歌词");
         const allRegions = wsRegions.getRegions().sort((a, b) => a.start - b.start);
@@ -466,13 +513,19 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         if (index === -1) return;
 
         const now = ws.getCurrentTime();
-        isSyncing = true; 
+        isSyncing = true; // 开启全局锁
         
-        if (index > 0) allRegions[index - 1].setOptions({ end: now });
+        if (index > 0) {
+            allRegions[index - 1].setOptions({ end: now });
+        }
+
+        // 连锁推演
         cascadePush(index, now, true);
+
         isSyncing = false;
     };
 
+    // --- 按钮：右对齐 (强力连锁) ---
     document.getElementById('mt-set-end').onclick = () => {
         if (!currentSelectedRegionId) return alert("请先双击选中一行歌词");
         const allRegions = wsRegions.getRegions().sort((a, b) => a.start - b.start);
@@ -484,11 +537,17 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         if (now <= currentRegion.start) return alert("终点不能早于起点");
 
         isSyncing = true;
+
         currentRegion.setOptions({ end: now });
-        if (index < allRegions.length - 1) cascadePush(index + 1, now, true);
+
+        if (index < allRegions.length - 1) {
+            cascadePush(index + 1, now, true);
+        }
+
         isSyncing = false;
     };
 
+    // --- 播放进度逻辑 ---
     let lastActiveRegionId = null;
     let lastActiveRowEl = null;
     const checkActiveRegion = throttle((currentTime) => {
@@ -510,38 +569,8 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
     ws.on('timeupdate', checkActiveRegion);
 }
 
-// --- 7. 导出 (手术刀式修复) ---
-
-// 辅助函数：检测并移除现有的 ID3v2 头部
-function removeID3v2Header(buffer) {
-    const view = new DataView(buffer);
-    
-    // ID3v2 头部必须以 "ID3" (0x49 0x44 0x33) 开头
-    if (buffer.byteLength < 10 || 
-        view.getUint8(0) !== 0x49 || 
-        view.getUint8(1) !== 0x44 || 
-        view.getUint8(2) !== 0x33) {
-        return buffer; // 没有标签，直接返回
-    }
-
-    // 计算标签大小 (Synchsafe integer, 位于第 6-9 字节)
-    // 每个字节只用低7位，高位为0
-    const size = ((view.getUint8(6) & 0x7f) << 21) |
-                 ((view.getUint8(7) & 0x7f) << 14) |
-                 ((view.getUint8(8) & 0x7f) << 7) |
-                 (view.getUint8(9) & 0x7f);
-    
-    const headerSize = 10;
-    // 整个标签的长度 = 头部(10) + 内容大小(size)
-    const totalTagSize = headerSize + size;
-
-    console.log(`Detected existing ID3v2 tag. Size: ${totalTagSize} bytes. Removing...`);
-    
-    // 切除头部，只返回后面的音频数据
-    return buffer.slice(totalTagSize);
-}
-
-async function exportLrc(embed) {
+// --- 7. 导出 (仅 LRC) ---
+function exportLrc() {
     if (!window.mtRegions) return;
     const regions = window.mtRegions.getRegions().sort((a, b) => a.start - b.start);
     let lrcContent = "";
@@ -559,49 +588,9 @@ async function exportLrc(embed) {
     const file = document.getElementById('mt-file').files[0];
     const baseName = file.name.replace(/\.[^/.]+$/, "");
 
-    if (!embed) {
-        // [保持修复] .lrc 文件使用 BOM 防止乱码
-        const blob = new Blob(['\ufeff' + lrcContent], { type: 'text/plain;charset=utf-8' });
-        download(blob, baseName + ".lrc");
-    } else {
-        const status = document.getElementById('mt-status');
-        status.innerText = "⏳ 深度清理旧标签中...";
-        try {
-            // 1. 读取原始文件
-            let rawBuffer = await file.arrayBuffer();
-
-            // 2. [关键修复]：移除文件头部的旧 ID3 标签
-            // 如果不移除，新标签和旧标签会并存，播放器可能只读旧的（空的）。
-            rawBuffer = removeID3v2Header(rawBuffer);
-
-            // 3. 使用 "干净" 的 Buffer 创建 writer
-            const writer = new window.ID3Writer(rawBuffer);
-            
-            let artist = "Unknown Artist";
-            let title = baseName;
-            
-            const nameParts = baseName.split(' - ');
-            if (nameParts.length >= 2) {
-                artist = nameParts[0].trim();
-                title = nameParts.slice(1).join(' - ').trim();
-            }
-
-            // 4. [兼容性修复]：换回 'eng'，清空 description
-            writer.setFrame('TIT2', title)
-                  .setFrame('TPE1', [artist])
-                  .setFrame('USLT', {
-                      description: '', // 描述留空，兼容性最好
-                      lyrics: lrcContent,
-                      language: 'eng' // 大部分播放器只认 eng
-                  });
-            
-            writer.addTag();
-            
-            const newName = baseName + "_lyric.mp3";
-            download(new Blob([writer.getBlob()]), newName);
-            status.innerText = "✅ 修复并导出完成";
-        } catch(e) { status.innerText = "❌ 失败: " + e.message; }
-    }
+    // 核心：添加 BOM (\ufeff) 解决乱码
+    const blob = new Blob(['\ufeff' + lrcContent], { type: 'text/plain;charset=utf-8' });
+    download(blob, baseName + ".lrc");
 }
 
 function formatTime(seconds) {
