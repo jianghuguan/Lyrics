@@ -55,42 +55,15 @@ function createCustomPopup(htmlContent) {
 
     const style = document.createElement('style');
     style.innerHTML = `
-        /* --- 核心交互修复 --- */
-        
-        /* 1. 歌词条背景：完全穿透，不挡手指/鼠标，确保波形可滑动 */
-        .wavesurfer-region { 
-            pointer-events: none !important; 
-            z-index: 4; 
-            background-color: rgba(255, 255, 255, 0.1) !important;
-        }
-        
-        /* 2. 歌词文字：也不挡鼠标 */
-        .wavesurfer-region-content {
-            pointer-events: none !important;
-        }
+        /* --- 交互修复 --- */
+        .wavesurfer-region { pointer-events: none !important; z-index: 4; background-color: rgba(255, 255, 255, 0.1) !important; }
+        .wavesurfer-region-content { pointer-events: none !important; }
+        .wavesurfer-region-handle { pointer-events: auto !important; width: 20px !important; background-color: rgba(255, 255, 255, 0.5) !important; z-index: 5; cursor: col-resize !important; }
+        .wavesurfer-region-handle:hover { background-color: rgba(255, 255, 255, 0.9) !important; }
+        #mt-waveform { cursor: grab; }
+        #mt-waveform:active { cursor: grabbing; }
 
-        /* 3. 左右手柄：必须开启交互，加宽以便触摸 */
-        .wavesurfer-region-handle { 
-            pointer-events: auto !important; 
-            width: 20px !important; 
-            background-color: rgba(255, 255, 255, 0.5) !important;
-            z-index: 5;
-            cursor: col-resize !important;
-        }
-        /* 手柄悬停高亮 */
-        .wavesurfer-region-handle:hover {
-            background-color: rgba(255, 255, 255, 0.9) !important;
-        }
-
-        /* 4. 波形画布：设置为抓手，提示可拖动 */
-        #mt-waveform {
-            cursor: grab;
-        }
-        #mt-waveform:active {
-            cursor: grabbing;
-        }
-
-        /* 其他 UI 样式 */
+        /* UI 样式 */
         .mt-no-select { user-select: none; -webkit-user-select: none; }
         #mt-lyrics-scroll-area::-webkit-scrollbar { width: 8px; }
         #mt-lyrics-scroll-area::-webkit-scrollbar-track { background: #1a1a1a; }
@@ -99,24 +72,14 @@ function createCustomPopup(htmlContent) {
         #mt-waveform::-webkit-scrollbar-track { background: #111; border-radius: 4px; }
         #mt-waveform::-webkit-scrollbar-thumb { background: #555; border-radius: 5px; border: 2px solid #111; }
         
-        .mt-row-selected {
-            border: 2px solid #ffc107 !important;
-            background-color: #333322 !important;
-        }
+        .mt-row-selected { border: 2px solid #ffc107 !important; background-color: #333322 !important; }
         .mt-row-active { background-color: #334455; }
         
-        .mt-control-btn {
-            background: #444; color: #eee; border: 1px solid #666; 
-            padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold;
-        }
+        .mt-control-btn { background: #444; color: #eee; border: 1px solid #666; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold; }
         .mt-control-btn:hover { background: #555; }
         .mt-control-btn:active { background: #333; }
         
-        .mt-region-label {
-            color: #fff; font-size: 10px; padding: 4px;
-            overflow: hidden; white-space: nowrap; pointer-events: none;
-            text-shadow: 0 1px 2px black;
-        }
+        .mt-region-label { color: #fff; font-size: 10px; padding: 4px; overflow: hidden; white-space: nowrap; pointer-events: none; text-shadow: 0 1px 2px black; }
     `;
     document.head.appendChild(style);
 
@@ -154,7 +117,7 @@ function createCustomPopup(htmlContent) {
 
 // --- 3. 插件入口 ---
 jQuery(async () => {
-    console.log("🎵 Music Tagger Loaded (Encoding Fix)");
+    console.log("🎵 Music Tagger Loaded (Fix Embedded Lyrics)");
     setTimeout(addMusicTaggerButton, 1000);
 });
 
@@ -180,7 +143,7 @@ function openTaggerModal() {
     const html = `
         <h3 style="margin:0; border-bottom:1px solid #444; padding-bottom:10px; color:#fff; display:flex; justify-content:space-between;">
             <span>🎵 智能歌词剪辑台</span>
-            <span style="font-size:12px; color:#aaa; margin-top:5px;">Cascade & UTF-8 BOM</span>
+            <span style="font-size:12px; color:#aaa; margin-top:5px;">Cascade & Fix Tags</span>
         </h3>
         <div id="mt-setup-area" style="display:flex; gap:20px; flex-wrap:wrap;">
             <div style="flex:1; min-width:200px;">
@@ -217,7 +180,7 @@ function openTaggerModal() {
             </div>
             
             <div style="color:#aaa; font-size:12px; margin-bottom:5px;">
-                🖱️ <b>双击</b> 波形可选中。使用上方对齐按钮可触发<b>连锁挤压</b>，确保无重叠且每句保留时长。
+                🖱️ <b>双击</b> 波形可选中。使用上方对齐按钮可触发<b>连锁挤压</b>，确保无重叠。
             </div>
 
             <div id="mt-waveform" style="width: 100%; height: 135px; background: #000; border-radius: 4px; margin-bottom: 15px; overflow-x: auto; overflow-y: hidden;"></div>
@@ -319,7 +282,7 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
     window.mtRegions = wsRegions;
 
     let currentSelectedRegionId = null; 
-    let isSyncing = false; // 全局锁
+    let isSyncing = false; 
 
     const userLines = userRawText.split('\n').filter(l => l.trim());
     const container = document.getElementById('mt-rows-container');
@@ -383,46 +346,34 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         Array.from(rows).forEach((row, i) => { row.querySelector('.mt-idx').innerText = i + 1; });
     }
 
-    // --- 核心算法：连锁挤压 (Cascade Push) ---
-    // startIdx: 从哪个索引开始往后推
-    // newStart: 该索引的起始时间
-    // enforceMinLen: 是否强制该索引的长度至少为5秒
+    // --- 核心：连锁挤压 ---
     function cascadePush(startIdx, newStart, enforceMinLen) {
         if (startIdx >= wsRegions.getRegions().length) return;
         
         const allRegions = wsRegions.getRegions().sort((a, b) => a.start - b.start);
         const totalDuration = ws.getDuration();
-        const minLen = 5.0; // 用户要求的保底 5 秒
+        const minLen = 5.0; 
 
         let currentStartPtr = newStart;
 
         for (let i = startIdx; i < allRegions.length; i++) {
             const region = allRegions[i];
             
-            // 1. 设置当前 region 的起点
             if (Math.abs(region.start - currentStartPtr) > 0.001) {
                 region.setOptions({ start: currentStartPtr });
             }
 
-            // 2. 计算理想终点
             let desiredEnd = region.end;
-            
-            // 强制保底长度 (当前被操作的 或者 后续受影响的)
-            // 只要起点被推移了，为了防止把该行压扁，我们需要重新计算它的终点位置，至少保留 minLen
+            // 只要发生了挤压，就保证最小长度
             desiredEnd = Math.max(region.end, currentStartPtr + minLen);
 
-            // 3. 边界检查
             if (desiredEnd > totalDuration) desiredEnd = totalDuration;
-
-            // 4. 设置终点
             if (Math.abs(region.end - desiredEnd) > 0.001) {
                 region.setOptions({ end: desiredEnd });
             }
             
-            // 5. 更新指针，准备处理下一个
             currentStartPtr = desiredEnd;
 
-            // 6. UI 更新
             const row = document.getElementById(`row-${region.id}`);
             if(row) row.querySelector('.mt-time-disp').innerText = formatTime(region.start);
         }
@@ -445,7 +396,7 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
                 end = start + len;
                 text = userLine || seg.text.trim();
             } else {
-                end = start + 5.0; // 默认给5秒
+                end = start + 5.0; 
                 text = userLine || "MISSING";
             }
             if (end > duration) end = duration;
@@ -465,7 +416,6 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         updateIndices();
     });
 
-    // --- 双击波形 ---
     document.getElementById('mt-waveform').ondblclick = (e) => {
         const clickTime = ws.getCurrentTime();
         const regions = wsRegions.getRegions().sort((a,b) => a.start - b.start);
@@ -476,7 +426,7 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
             const lastRegion = regions[regions.length - 1];
             let start = lastRegion ? lastRegion.end : 0;
             const newRegion = wsRegions.addRegion({
-                start: start, end: start + 5, // 新建的也给5秒
+                start: start, end: start + 5,
                 content: createContentEl("新歌词"),
                 color: "rgba(255, 255, 255, 0.3)", drag: false, resize: true
             });
@@ -488,7 +438,6 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         }
     };
 
-    // --- 拖动手柄时的普通连动 (Basic Chain Sync) ---
     wsRegions.on('region-updated', (region) => {
         if (isSyncing) return; 
         isSyncing = true; 
@@ -510,7 +459,6 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         if(row) row.querySelector('.mt-time-disp').innerText = formatTime(region.start);
     });
 
-    // --- 按钮：左对齐 (强力连锁) ---
     document.getElementById('mt-set-start').onclick = () => {
         if (!currentSelectedRegionId) return alert("请先双击选中一行歌词");
         const allRegions = wsRegions.getRegions().sort((a, b) => a.start - b.start);
@@ -518,19 +466,13 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         if (index === -1) return;
 
         const now = ws.getCurrentTime();
-        isSyncing = true; // 开启全局锁
+        isSyncing = true; 
         
-        if (index > 0) {
-            allRegions[index - 1].setOptions({ end: now });
-        }
-
-        // 连锁推演
+        if (index > 0) allRegions[index - 1].setOptions({ end: now });
         cascadePush(index, now, true);
-
         isSyncing = false;
     };
 
-    // --- 按钮：右对齐 (强力连锁) ---
     document.getElementById('mt-set-end').onclick = () => {
         if (!currentSelectedRegionId) return alert("请先双击选中一行歌词");
         const allRegions = wsRegions.getRegions().sort((a, b) => a.start - b.start);
@@ -542,17 +484,11 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         if (now <= currentRegion.start) return alert("终点不能早于起点");
 
         isSyncing = true;
-
         currentRegion.setOptions({ end: now });
-
-        if (index < allRegions.length - 1) {
-            cascadePush(index + 1, now, true);
-        }
-
+        if (index < allRegions.length - 1) cascadePush(index + 1, now, true);
         isSyncing = false;
     };
 
-    // --- 播放进度逻辑 ---
     let lastActiveRegionId = null;
     let lastActiveRowEl = null;
     const checkActiveRegion = throttle((currentTime) => {
@@ -574,7 +510,7 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
     ws.on('timeupdate', checkActiveRegion);
 }
 
-// --- 7. 导出 ---
+// --- 7. 导出 (增强版：修复歌词显示 & 编码) ---
 async function exportLrc(embed) {
     if (!window.mtRegions) return;
     const regions = window.mtRegions.getRegions().sort((a, b) => a.start - b.start);
@@ -594,9 +530,7 @@ async function exportLrc(embed) {
     const baseName = file.name.replace(/\.[^/.]+$/, "");
 
     if (!embed) {
-        // --- 核心修复：添加 BOM (\ufeff) ---
-        // \ufeff 是 UTF-8 的字节顺序标记 (BOM)。
-        // 加上它之后，所有播放器都会明确知道这是 UTF-8 编码，彻底解决乱码。
+        // [修复] 添加 BOM 头 \ufeff，防止 .lrc 文件在旧播放器乱码
         const blob = new Blob(['\ufeff' + lrcContent], { type: 'text/plain;charset=utf-8' });
         download(blob, baseName + ".lrc");
     } else {
@@ -604,9 +538,34 @@ async function exportLrc(embed) {
         status.innerText = "⏳ 写入中...";
         try {
             const writer = new window.ID3Writer(await file.arrayBuffer());
-            writer.setFrame('USLT', { description: '', lyrics: lrcContent, language: 'eng' });
+            
+            // [修复] 自动推测歌名和歌手
+            // 很多播放器如果发现 ID3 只有歌词没有标题，会认为标签损坏而忽略歌词
+            let artist = "Unknown Artist";
+            let title = baseName;
+            
+            // 尝试解析 "歌手 - 歌名.mp3"
+            const nameParts = baseName.split(' - ');
+            if (nameParts.length >= 2) {
+                artist = nameParts[0].trim();
+                title = nameParts.slice(1).join(' - ').trim();
+            }
+
+            writer.setFrame('TIT2', title)
+                  .setFrame('TPE1', [artist]) // 歌手必须是数组
+                  .setFrame('USLT', {
+                      description: '', // 保持为空，兼容性最好
+                      lyrics: lrcContent,
+                      language: 'xxx' // [关键修复] 设置为 'xxx' (未知)，防止播放器因语言代码(eng)不匹配而隐藏中文歌词
+                  });
+            
             writer.addTag();
-            download(new Blob([writer.getBlob()]), baseName + "_lyrics.mp3");
+            
+            // 提醒用户
+            const newName = baseName + "_tagged.mp3";
+            alert(`已生成: ${newName}\n\n⚠️ 注意：如果手机播放器仍不显示歌词，通常是因为缓存。\n请尝试重命名文件，或在播放器设置里“重新扫描媒体库”。`);
+            
+            download(new Blob([writer.getBlob()]), newName);
             status.innerText = "✅ 完成";
         } catch(e) { status.innerText = "❌ 失败: " + e.message; }
     }
