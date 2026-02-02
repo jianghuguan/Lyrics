@@ -154,7 +154,7 @@ function createCustomPopup(htmlContent) {
 
 // --- 3. 插件入口 ---
 jQuery(async () => {
-    console.log("🎵 Music Tagger Loaded (Cascade Push)");
+    console.log("🎵 Music Tagger Loaded (Encoding Fix)");
     setTimeout(addMusicTaggerButton, 1000);
 });
 
@@ -180,7 +180,7 @@ function openTaggerModal() {
     const html = `
         <h3 style="margin:0; border-bottom:1px solid #444; padding-bottom:10px; color:#fff; display:flex; justify-content:space-between;">
             <span>🎵 智能歌词剪辑台</span>
-            <span style="font-size:12px; color:#aaa; margin-top:5px;">Cascade Logic</span>
+            <span style="font-size:12px; color:#aaa; margin-top:5px;">Cascade & UTF-8 BOM</span>
         </h3>
         <div id="mt-setup-area" style="display:flex; gap:20px; flex-wrap:wrap;">
             <div style="flex:1; min-width:200px;">
@@ -226,7 +226,7 @@ function openTaggerModal() {
                 <div id="mt-rows-container"></div>
             </div>
             <div style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end; padding-bottom:10px;">
-                <button id="mt-download-lrc" style="background:#555; padding:10px 20px; color:white; border:none; border-radius:4px; cursor:pointer;">下载 .lrc</button>
+                <button id="mt-download-lrc" style="background:#555; padding:10px 20px; color:white; border:none; border-radius:4px; cursor:pointer;">下载 .lrc (BOM修复)</button>
                 <button id="mt-download-mp3" style="background:#2b5e99; padding:10px 20px; color:white; border:none; border-radius:4px; cursor:pointer;">💾 导出内嵌 MP3</button>
             </div>
         </div>
@@ -400,8 +400,6 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
             const region = allRegions[i];
             
             // 1. 设置当前 region 的起点
-            // 注意：如果是循环的第一项(startIdx)，它的起点已经由外部决定了，这里只是再次确认
-            // 如果是后续项，它的起点必须等于前一项的终点
             if (Math.abs(region.start - currentStartPtr) > 0.001) {
                 region.setOptions({ start: currentStartPtr });
             }
@@ -409,15 +407,9 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
             // 2. 计算理想终点
             let desiredEnd = region.end;
             
-            // 如果是触发源头(或者被挤压的后续)，且当前长度小于 5s，强制撑开
-            if (i === startIdx && enforceMinLen) {
-                desiredEnd = Math.max(region.end, currentStartPtr + minLen);
-            } else {
-                // 对于被动受影响的后续歌词，也要保证不重叠
-                // 也就是说，终点至少要是 起点 + 5s (根据用户要求“每个歌词条保留5秒”)
-                // 或者只是单纯平移？用户说“每个歌词条保留5秒”，我理解为保底值
-                desiredEnd = Math.max(region.end, currentStartPtr + minLen);
-            }
+            // 强制保底长度 (当前被操作的 或者 后续受影响的)
+            // 只要起点被推移了，为了防止把该行压扁，我们需要重新计算它的终点位置，至少保留 minLen
+            desiredEnd = Math.max(region.end, currentStartPtr + minLen);
 
             // 3. 边界检查
             if (desiredEnd > totalDuration) desiredEnd = totalDuration;
@@ -430,7 +422,7 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
             // 5. 更新指针，准备处理下一个
             currentStartPtr = desiredEnd;
 
-            // 6. UI 更新 (不用 wait animation frame，直接刷，保证准确性)
+            // 6. UI 更新
             const row = document.getElementById(`row-${region.id}`);
             if(row) row.querySelector('.mt-time-disp').innerText = formatTime(region.start);
         }
@@ -504,8 +496,6 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         const allRegions = wsRegions.getRegions().sort((a, b) => a.start - b.start);
         const index = allRegions.findIndex(r => r.id === region.id);
 
-        // 普通拖动时，为了不产生剧烈的连锁反应（太卡），我们只做简单的相邻吸附
-        // 用户想“暴力挤压”时使用按钮即可。手动拖动我们假设用户知道自己在微调。
         if (index > 0) {
             const prev = allRegions[index - 1];
             if (Math.abs(prev.end - region.start) > 0.001) prev.setOptions({ end: region.start });
@@ -516,8 +506,6 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         }
 
         isSyncing = false; 
-
-        // UI 刷新
         const row = document.getElementById(`row-${region.id}`);
         if(row) row.querySelector('.mt-time-disp').innerText = formatTime(region.start);
     });
@@ -530,15 +518,13 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         if (index === -1) return;
 
         const now = ws.getCurrentTime();
-        isSyncing = true; // 开启全局锁，接管所有 Region 更新
+        isSyncing = true; // 开启全局锁
         
-        // 1. 如果有上一句，把上一句的 End 拉过来
         if (index > 0) {
             allRegions[index - 1].setOptions({ end: now });
         }
 
-        // 2. 从当前句开始，向后执行连锁挤压
-        // 参数：当前索引，新起点，是否强制保底长度
+        // 连锁推演
         cascadePush(index, now, true);
 
         isSyncing = false;
@@ -552,16 +538,13 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         if (index === -1) return;
 
         const now = ws.getCurrentTime();
-        // 安全检查：不能让终点早于起点
         const currentRegion = allRegions[index];
         if (now <= currentRegion.start) return alert("终点不能早于起点");
 
         isSyncing = true;
 
-        // 1. 设置当前句终点
         currentRegion.setOptions({ end: now });
 
-        // 2. 从下一句开始，起点设为 now，并向后挤压
         if (index < allRegions.length - 1) {
             cascadePush(index + 1, now, true);
         }
@@ -611,7 +594,11 @@ async function exportLrc(embed) {
     const baseName = file.name.replace(/\.[^/.]+$/, "");
 
     if (!embed) {
-        download(new Blob([lrcContent]), baseName + ".lrc");
+        // --- 核心修复：添加 BOM (\ufeff) ---
+        // \ufeff 是 UTF-8 的字节顺序标记 (BOM)。
+        // 加上它之后，所有播放器都会明确知道这是 UTF-8 编码，彻底解决乱码。
+        const blob = new Blob(['\ufeff' + lrcContent], { type: 'text/plain;charset=utf-8' });
+        download(blob, baseName + ".lrc");
     } else {
         const status = document.getElementById('mt-status');
         status.innerText = "⏳ 写入中...";
