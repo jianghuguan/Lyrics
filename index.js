@@ -15,6 +15,20 @@ function saveSettings(newSettings) {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(newSettings));
 }
 
+// 简单的节流函数：限制函数执行频率
+function throttle(func, limit) {
+    let inThrottle;
+    return function() {
+        const args = arguments;
+        const context = this;
+        if (!inThrottle) {
+            func.apply(context, args);
+            inThrottle = true;
+            setTimeout(() => inThrottle = false, limit);
+        }
+    }
+}
+
 // 顺序加载库文件
 async function loadLibraries() {
     const loadScript = (src) => new Promise((resolve, reject) => {
@@ -123,7 +137,7 @@ function createCustomPopup(htmlContent) {
 
 // --- 3. 插件入口 ---
 jQuery(async () => {
-    console.log("🎵 Music Tagger Loaded (Lag Fixed Ver)");
+    console.log("🎵 Music Tagger Loaded (Final Performance Ver)");
     setTimeout(addMusicTaggerButton, 1000);
 });
 
@@ -275,6 +289,8 @@ async function runAIAndInitEditor() {
         formData.append("file", file);
         formData.append("model", "whisper-large-v3");
         formData.append("response_format", "verbose_json");
+        // 【新增】提示词：指导 AI 生成更符合 lrc 格式的时间戳切分
+        formData.append("prompt", "One line of lyrics corresponds to one timestamp. 一行歌词对应一个时间戳。");
         
         const response = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
             method: "POST", headers: { "Authorization": `Bearer ${apiKey}` }, body: formData
@@ -296,7 +312,7 @@ async function runAIAndInitEditor() {
     }
 }
 
-// --- 6. WaveSurfer 编辑器配置 (修复卡顿版) ---
+// --- 6. WaveSurfer 编辑器配置 (终极防卡顿版) ---
 async function initWaveSurfer(fileBlob, segments, userRawText) {
     if (window.mtWaveSurfer) window.mtWaveSurfer.destroy();
     if (!window.WaveSurfer || !window.WaveSurfer.Regions) {
@@ -334,7 +350,6 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
 
     const userLines = userRawText.split('\n').filter(l => l.trim());
     const container = document.getElementById('mt-rows-container');
-    const scrollArea = document.getElementById('mt-lyrics-scroll-area');
     container.innerHTML = "";
 
     ws.on('ready', () => {
@@ -382,56 +397,46 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         region.play(); 
     });
 
-    // 【核心优化 1】缓存 DOM 引用，避免 O(N) 循环
-    // 之前每次播放更新都会遍历所有行，现在只处理变化的行
     let lastActiveRegionId = null;
     let lastActiveRowEl = null;
 
-    ws.on('timeupdate', (currentTime) => {
-        // 查找当前时间对应的 region (这个操作很快，可以不优化)
+    // 【核心修复】使用 throttle 节流 timeupdate
+    // 只有每 100ms 才会执行一次检测，避免在拖拽或密集跳转时阻塞主线程
+    const checkActiveRegion = throttle((currentTime) => {
         const regions = wsRegions.getRegions();
+        // 简单查找即可
         const activeRegion = regions.find(r => currentTime >= r.start && currentTime < r.end);
 
-        // 只有当 ID 真正变化时才操作 DOM
         if (activeRegion && activeRegion.id !== lastActiveRegionId) {
             lastActiveRegionId = activeRegion.id;
             
-            // 1. 快速还原上一个激活行的样式 (O(1) 复杂度)
+            // 1. 还原旧样式
             if (lastActiveRowEl) {
                 lastActiveRowEl.style.background = '#222';
                 lastActiveRowEl.style.borderLeftColor = 'transparent';
             }
 
-            // 2. 获取并高亮新行
+            // 2. 高亮新行
             const newRow = document.getElementById(`row-${activeRegion.id}`);
             if(newRow) {
-                lastActiveRowEl = newRow; // 更新缓存
+                lastActiveRowEl = newRow;
                 newRow.style.background = '#334455';
                 newRow.style.borderLeftColor = '#007bff';
 
-                // 3. 计算滚动 (保持不变)
-                const containerHeight = scrollArea.clientHeight;
-                const rowTop = newRow.offsetTop;
-                const rowHeight = newRow.clientHeight;
-                const targetScroll = rowTop - (containerHeight / 2) + (rowHeight / 2);
-                
-                scrollArea.scrollTo({
-                    top: targetScroll,
-                    behavior: 'smooth'
-                });
+                // 【优化】使用 native API 滚动，避免 JS 计算 offsetTop 导致强制重排
+                newRow.scrollIntoView({ block: 'center', behavior: 'smooth' });
             }
         }
+    }, 100); // 100ms 间隔足够人眼同步，但能极大减轻 CPU 负担
+
+    ws.on('timeupdate', (currentTime) => {
+        checkActiveRegion(currentTime);
     });
 
-    // 【核心优化 2】使用 requestAnimationFrame 节流拖拽更新
-    // 之前拖动时每像素都会触发 DOM 更新，现在限制为屏幕刷新率
+    // 拖动更新时间时，也使用 requestAnimationFrame 节流
     let animationFrameId = null;
-
     wsRegions.on('region-updated', (region) => {
-        if (animationFrameId) {
-            cancelAnimationFrame(animationFrameId);
-        }
-
+        if (animationFrameId) cancelAnimationFrame(animationFrameId);
         animationFrameId = requestAnimationFrame(() => {
             const row = document.getElementById(`row-${region.id}`);
             if (row) {
