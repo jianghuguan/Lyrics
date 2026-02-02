@@ -117,7 +117,7 @@ function createCustomPopup(htmlContent) {
 
 // --- 3. 插件入口 ---
 jQuery(async () => {
-    console.log("🎵 Music Tagger Loaded (Fix Embedded Lyrics)");
+    console.log("🎵 Music Tagger Loaded (Deep Clean Fix)");
     setTimeout(addMusicTaggerButton, 1000);
 });
 
@@ -143,7 +143,7 @@ function openTaggerModal() {
     const html = `
         <h3 style="margin:0; border-bottom:1px solid #444; padding-bottom:10px; color:#fff; display:flex; justify-content:space-between;">
             <span>🎵 智能歌词剪辑台</span>
-            <span style="font-size:12px; color:#aaa; margin-top:5px;">Cascade & Fix Tags</span>
+            <span style="font-size:12px; color:#aaa; margin-top:5px;">Deep Clean & Fix</span>
         </h3>
         <div id="mt-setup-area" style="display:flex; gap:20px; flex-wrap:wrap;">
             <div style="flex:1; min-width:200px;">
@@ -190,7 +190,7 @@ function openTaggerModal() {
             </div>
             <div style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end; padding-bottom:10px;">
                 <button id="mt-download-lrc" style="background:#555; padding:10px 20px; color:white; border:none; border-radius:4px; cursor:pointer;">下载 .lrc (BOM修复)</button>
-                <button id="mt-download-mp3" style="background:#2b5e99; padding:10px 20px; color:white; border:none; border-radius:4px; cursor:pointer;">💾 导出内嵌 MP3</button>
+                <button id="mt-download-mp3" style="background:#2b5e99; padding:10px 20px; color:white; border:none; border-radius:4px; cursor:pointer;">💾 导出内嵌 MP3 (强力修复)</button>
             </div>
         </div>
     `;
@@ -510,7 +510,37 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
     ws.on('timeupdate', checkActiveRegion);
 }
 
-// --- 7. 导出 (增强版：修复歌词显示 & 编码) ---
+// --- 7. 导出 (手术刀式修复) ---
+
+// 辅助函数：检测并移除现有的 ID3v2 头部
+function removeID3v2Header(buffer) {
+    const view = new DataView(buffer);
+    
+    // ID3v2 头部必须以 "ID3" (0x49 0x44 0x33) 开头
+    if (buffer.byteLength < 10 || 
+        view.getUint8(0) !== 0x49 || 
+        view.getUint8(1) !== 0x44 || 
+        view.getUint8(2) !== 0x33) {
+        return buffer; // 没有标签，直接返回
+    }
+
+    // 计算标签大小 (Synchsafe integer, 位于第 6-9 字节)
+    // 每个字节只用低7位，高位为0
+    const size = ((view.getUint8(6) & 0x7f) << 21) |
+                 ((view.getUint8(7) & 0x7f) << 14) |
+                 ((view.getUint8(8) & 0x7f) << 7) |
+                 (view.getUint8(9) & 0x7f);
+    
+    const headerSize = 10;
+    // 整个标签的长度 = 头部(10) + 内容大小(size)
+    const totalTagSize = headerSize + size;
+
+    console.log(`Detected existing ID3v2 tag. Size: ${totalTagSize} bytes. Removing...`);
+    
+    // 切除头部，只返回后面的音频数据
+    return buffer.slice(totalTagSize);
+}
+
 async function exportLrc(embed) {
     if (!window.mtRegions) return;
     const regions = window.mtRegions.getRegions().sort((a, b) => a.start - b.start);
@@ -530,43 +560,46 @@ async function exportLrc(embed) {
     const baseName = file.name.replace(/\.[^/.]+$/, "");
 
     if (!embed) {
-        // [修复] 添加 BOM 头 \ufeff，防止 .lrc 文件在旧播放器乱码
+        // [保持修复] .lrc 文件使用 BOM 防止乱码
         const blob = new Blob(['\ufeff' + lrcContent], { type: 'text/plain;charset=utf-8' });
         download(blob, baseName + ".lrc");
     } else {
         const status = document.getElementById('mt-status');
-        status.innerText = "⏳ 写入中...";
+        status.innerText = "⏳ 深度清理旧标签中...";
         try {
-            const writer = new window.ID3Writer(await file.arrayBuffer());
+            // 1. 读取原始文件
+            let rawBuffer = await file.arrayBuffer();
+
+            // 2. [关键修复]：移除文件头部的旧 ID3 标签
+            // 如果不移除，新标签和旧标签会并存，播放器可能只读旧的（空的）。
+            rawBuffer = removeID3v2Header(rawBuffer);
+
+            // 3. 使用 "干净" 的 Buffer 创建 writer
+            const writer = new window.ID3Writer(rawBuffer);
             
-            // [修复] 自动推测歌名和歌手
-            // 很多播放器如果发现 ID3 只有歌词没有标题，会认为标签损坏而忽略歌词
             let artist = "Unknown Artist";
             let title = baseName;
             
-            // 尝试解析 "歌手 - 歌名.mp3"
             const nameParts = baseName.split(' - ');
             if (nameParts.length >= 2) {
                 artist = nameParts[0].trim();
                 title = nameParts.slice(1).join(' - ').trim();
             }
 
+            // 4. [兼容性修复]：换回 'eng'，清空 description
             writer.setFrame('TIT2', title)
-                  .setFrame('TPE1', [artist]) // 歌手必须是数组
+                  .setFrame('TPE1', [artist])
                   .setFrame('USLT', {
-                      description: '', // 保持为空，兼容性最好
+                      description: '', // 描述留空，兼容性最好
                       lyrics: lrcContent,
-                      language: 'xxx' // [关键修复] 设置为 'xxx' (未知)，防止播放器因语言代码(eng)不匹配而隐藏中文歌词
+                      language: 'eng' // 大部分播放器只认 eng
                   });
             
             writer.addTag();
             
-            // 提醒用户
-            const newName = baseName + "_tagged.mp3";
-            alert(`已生成: ${newName}\n\n⚠️ 注意：如果手机播放器仍不显示歌词，通常是因为缓存。\n请尝试重命名文件，或在播放器设置里“重新扫描媒体库”。`);
-            
+            const newName = baseName + "_lyric.mp3";
             download(new Blob([writer.getBlob()]), newName);
-            status.innerText = "✅ 完成";
+            status.innerText = "✅ 修复并导出完成";
         } catch(e) { status.innerText = "❌ 失败: " + e.message; }
     }
 }
