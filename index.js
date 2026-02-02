@@ -65,15 +65,11 @@ function createCustomPopup(htmlContent) {
         #mt-waveform::-webkit-scrollbar-track { background: #111; border-radius: 4px; }
         #mt-waveform::-webkit-scrollbar-thumb { background: #555; border-radius: 5px; border: 2px solid #111; }
         
-        /* 选中的行样式 */
         .mt-row-selected {
-            border: 2px solid #ffc107 !important; /* 金色边框表示选中 */
+            border: 2px solid #ffc107 !important;
             background-color: #333322 !important;
         }
-        /* 播放激活的行样式 (如果被选中，会被覆盖或叠加) */
-        .mt-row-active {
-            background-color: #334455;
-        }
+        .mt-row-active { background-color: #334455; }
         
         .mt-control-btn {
             background: #444; color: #eee; border: 1px solid #666; 
@@ -118,7 +114,7 @@ function createCustomPopup(htmlContent) {
 
 // --- 3. 插件入口 ---
 jQuery(async () => {
-    console.log("🎵 Music Tagger Loaded (Edit Mode)");
+    console.log("🎵 Music Tagger Loaded (Collision Fix)");
     setTimeout(addMusicTaggerButton, 1000);
 });
 
@@ -170,13 +166,10 @@ function openTaggerModal() {
         <div id="mt-editor-area" style="display:none; flex-direction:column; flex:1; border-top:1px solid #444; padding-top:10px;">
             <div style="display:flex; gap:15px; margin-bottom:5px; align-items:center; position:sticky; top:0; background:#1e1e1e; z-index:10; padding:10px 0; border-bottom:1px solid #333; flex-wrap:wrap;">
                 <button id="mt-play-pause" style="background:#28a745; color:white; border:none; padding:5px 15px; border-radius:4px; cursor:pointer;">▶ 播放/暂停</button>
-                
-                <!-- 新增对齐按钮组 -->
                 <div style="display:flex; gap:5px; border-left:1px solid #444; padding-left:15px;">
                     <button id="mt-set-start" class="mt-control-btn" title="将选中歌词条的起点移动到当前播放线">⇤ 左侧对齐播放线</button>
                     <button id="mt-set-end" class="mt-control-btn" title="将选中歌词条的终点移动到当前播放线">右侧对齐播放线 ⇥</button>
                 </div>
-
                 <div style="display:flex; align-items:center; gap:5px; color:#ccc; font-size:12px; margin-left:auto;">
                     <span>🔍 缩放:</span>
                     <input type="range" id="mt-zoom" min="10" max="300" value="50" style="width:80px;">
@@ -184,7 +177,7 @@ function openTaggerModal() {
             </div>
             
             <div style="color:#aaa; font-size:12px; margin-bottom:5px;">
-                🖱️ 双击列表或波形可<b>选中</b>歌词条。选中后可左右拖动波形，使用上方按钮对齐。
+                🖱️ 双击选中歌词条，左右拖动边界会自动避让邻居。
             </div>
 
             <div id="mt-waveform" style="width: 100%; height: 135px; background: #000; border-radius: 4px; margin-bottom: 15px; cursor: text; overflow-x: auto; overflow-y: hidden;"></div>
@@ -232,7 +225,7 @@ async function runAIAndInitEditor() {
         formData.append("file", file);
         formData.append("model", "whisper-large-v3");
         formData.append("response_format", "verbose_json");
-        formData.append("prompt", "Split the lyrics line by line carefully. Do not merge multiple lines into one segment. 一行歌词一个时间戳。");
+        formData.append("prompt", "One line of lyrics corresponds to one timestamp. 一行歌词对应一个时间戳。");
         
         const response = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
             method: "POST", headers: { "Authorization": `Bearer ${apiKey}` }, body: formData
@@ -246,7 +239,7 @@ async function runAIAndInitEditor() {
         document.getElementById('mt-setup-area').style.display = 'none'; 
         
         await initWaveSurfer(file, data.segments, rawText);
-        status.innerText = "🎵 完成！双击列表选中，使用上方按钮对齐。";
+        status.innerText = "🎵 完成！";
 
     } catch (e) {
         status.innerText = "❌ 错误: " + e.message;
@@ -284,18 +277,13 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
     window.mtWaveSurfer = ws;
     window.mtRegions = wsRegions;
 
-    // --- 状态管理 ---
     let currentSelectedRegionId = null; 
-
     const userLines = userRawText.split('\n').filter(l => l.trim());
     const container = document.getElementById('mt-rows-container');
     container.innerHTML = "";
 
-    // 选中逻辑
     function selectRegion(id) {
         currentSelectedRegionId = id;
-        
-        // 1. 更新 UI 列表的高亮
         const allRows = container.children;
         for (let row of allRows) {
             row.classList.remove('mt-row-selected');
@@ -305,20 +293,11 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
             targetRow.classList.add('mt-row-selected');
             targetRow.scrollIntoView({ block: 'center', behavior: 'smooth' });
         }
-
-        // 2. 更新波形显示 (可选：让波形滚动到这里)
-        const reg = wsRegions.getRegions().find(r => r.id === id);
-        if(reg) {
-            // 注意：不要在选中时自动播放，也不要强制把波形拉过来，防止用户正在听其他地方
-            // 仅仅是状态标记
-        }
     }
 
-    // 辅助函数：创建一行 UI
     function createRow(regionId, initialText, startTime) {
         const row = document.createElement('div');
         row.id = `row-${regionId}`;
-        // 增加 border 用于显示选中状态
         row.style.cssText = "display:flex; gap:10px; margin-bottom:8px; align-items:center; background:#222; padding:10px; border-radius:6px; border:2px solid transparent;";
         row.innerHTML = `
             <span class="mt-idx" style="color:#666; font-size:14px; width:25px; font-weight:bold;">#</span>
@@ -327,39 +306,32 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
             <span class="mt-time-disp" style="font-family:monospace; color:#aaa; font-size:13px; min-width:90px; text-align:right;">${formatTime(startTime)}</span>
         `;
         
-        // 文本同步
         row.querySelector('input').addEventListener('input', (e) => {
             const reg = wsRegions.getRegions().find(r => r.id === regionId);
             if(reg) reg.setOptions({ content: `<div style="color:#fff; font-size:10px; padding:2px; overflow:hidden; white-space:nowrap; pointer-events:none;">${e.target.value}</div>` });
         });
 
-        // 删除
         row.querySelector('.mt-del-btn').onclick = (e) => {
             e.stopPropagation();
             const reg = wsRegions.getRegions().find(r => r.id === regionId);
             if(reg) { reg.remove(); row.remove(); updateIndices(); }
         };
 
-        // 【修改】单击不再播放，防止误触。保留输入框点击。
-        // 【新增】双击选中
         row.ondblclick = (e) => {
             if(e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON') {
                 const reg = wsRegions.getRegions().find(r => r.id === regionId);
                 if(reg) {
-                    ws.setTime(reg.start); // 双击列表还是跳过去比较方便
+                    ws.setTime(reg.start);
                     selectRegion(regionId);
                 }
             }
         };
-
         return row;
     }
 
     function updateIndices() {
         const rows = document.getElementById('mt-rows-container').children;
-        Array.from(rows).forEach((row, i) => {
-            row.querySelector('.mt-idx').innerText = i + 1;
-        });
+        Array.from(rows).forEach((row, i) => { row.querySelector('.mt-idx').innerText = i + 1; });
     }
 
     ws.on('ready', () => {
@@ -383,136 +355,141 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
                 end = start + 2; 
                 text = userLine || "MISSING LYRIC";
             }
-
-            const color = seg ? 
-                ((i % 2 === 0) ? "rgba(0, 123, 255, 0.2)" : "rgba(40, 167, 69, 0.2)") : 
-                "rgba(255, 193, 7, 0.3)";
-
+            const color = seg ? ((i % 2 === 0) ? "rgba(0, 123, 255, 0.2)" : "rgba(40, 167, 69, 0.2)") : "rgba(255, 193, 7, 0.3)";
+            
             const region = wsRegions.addRegion({
-                id: `seg-${i}-${Date.now()}`, // 唯一ID
-                start: start,
-                end: end,
+                id: `seg-${i}-${Date.now()}`,
+                start: start, end: end,
                 content: `<div style="color:#fff; font-size:10px; padding:2px; overflow:hidden; white-space:nowrap; pointer-events:none;">${text}</div>`,
-                color: color,
-                // 【核心修改】drag: false 确保在波形上拖动时不会移动歌词条，而是拖动波形视图
-                drag: false, 
-                resize: true 
+                color: color, drag: false, resize: true 
             });
-
             container.appendChild(createRow(region.id, text, start));
         }
         updateIndices();
     });
 
-    // 监听波形图上的 Region 点击
-    wsRegions.on('region-clicked', (region, e) => {
-        e.stopPropagation();
-        // 单击不播放，也不移动。可以用来作为“选中”的快捷方式
-        // 但为了防止误触，我们把选中逻辑也放在双击？或者单击波形块=选中？
-        // 用户要求：双击选中。
-    });
+    wsRegions.on('region-double-clicked', (region, e) => { e.stopPropagation(); selectRegion(region.id); });
 
-    // 波形图的双击选中逻辑
-    wsRegions.on('region-double-clicked', (region, e) => {
-        e.stopPropagation();
-        selectRegion(region.id);
-    });
-
-    // 空白处双击添加
     document.getElementById('mt-waveform').ondblclick = (e) => {
-        // 由于 Wavesurfer 的 region 拦截了事件，这里只会触发空白处
         const clickTime = ws.getCurrentTime();
         const duration = ws.getDuration();
         const newRegion = wsRegions.addRegion({
-            start: clickTime,
-            end: Math.min(clickTime + 2, duration),
+            start: clickTime, end: Math.min(clickTime + 2, duration),
             content: `<div style="color:#fff; font-size:10px; padding:2px; overflow:hidden; white-space:nowrap; pointer-events:none;">新歌词</div>`,
-            color: "rgba(255, 255, 255, 0.3)",
-            drag: false, // 新增的也默认不能拖动
-            resize: true
+            color: "rgba(255, 255, 255, 0.3)", drag: false, resize: true
         });
         const row = createRow(newRegion.id, "新歌词", clickTime);
         container.appendChild(row);
         updateIndices();
         row.scrollIntoView({ behavior: 'smooth' });
-        // 自动选中新建的
         selectRegion(newRegion.id);
     };
 
-    // --- 按钮逻辑：对齐 ---
-    document.getElementById('mt-set-start').onclick = () => {
-        if (!currentSelectedRegionId) return alert("请先双击选中一行歌词");
-        const region = wsRegions.getRegions().find(r => r.id === currentSelectedRegionId);
-        if (region) {
-            const now = ws.getCurrentTime();
-            if (now >= region.end) {
-                // 如果当前时间比结束时间还晚，自动把结束时间往后推，保持最小间隔
-                region.setOptions({ start: now, end: now + 1 });
-            } else {
-                region.setOptions({ start: now });
-            }
-        }
-    };
-
-    document.getElementById('mt-set-end').onclick = () => {
-        if (!currentSelectedRegionId) return alert("请先双击选中一行歌词");
-        const region = wsRegions.getRegions().find(r => r.id === currentSelectedRegionId);
-        if (region) {
-            const now = ws.getCurrentTime();
-            if (now <= region.start) {
-                // 如果当前时间比开始时间还早，自动把开始时间往前推
-                region.setOptions({ end: now, start: Math.max(0, now - 1) });
-            } else {
-                region.setOptions({ end: now });
-            }
-        }
-    };
-
-    // --- 播放进度逻辑 ---
-    let lastActiveRegionId = null;
-    let lastActiveRowEl = null;
-    
-    const checkActiveRegion = throttle((currentTime) => {
-        // 只负责更新“正在播放”的样式 (Active)，不负责“选中” (Selected)
-        // 两者样式可以共存
-        const regions = wsRegions.getRegions();
-        const activeRegion = regions.find(r => currentTime >= r.start && currentTime < r.end);
-
-        if (activeRegion && activeRegion.id !== lastActiveRegionId) {
-            lastActiveRegionId = activeRegion.id;
-            
-            // 清除上一个播放的高亮（背景色）
-            if (lastActiveRowEl) {
-                lastActiveRowEl.classList.remove('mt-row-active');
-            }
-
-            const newRow = document.getElementById(`row-${activeRegion.id}`);
-            if(newRow) {
-                lastActiveRowEl = newRow;
-                newRow.classList.add('mt-row-active');
-                // 自动滚动 (仅当没有手动选中时，或者比较温和地滚动)
-                newRow.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-            }
-        }
-    }, 100);
-
-    ws.on('timeupdate', checkActiveRegion);
-
+    // --- 核心修复：防重叠避让逻辑 ---
     let animationFrameId = null;
     wsRegions.on('region-updated', (region) => {
+        // 1. 获取所有区域并排序 (包含当前的)
+        const allRegions = wsRegions.getRegions().sort((a, b) => a.start - b.start);
+        const currentIndex = allRegions.findIndex(r => r.id === region.id);
+
+        // 2. 检测左侧邻居 (防止 Start 越过前一个的 End)
+        if (currentIndex > 0) {
+            const prev = allRegions[currentIndex - 1];
+            if (region.start < prev.end) {
+                // 强制卡住
+                region.setOptions({ start: prev.end });
+            }
+        }
+
+        // 3. 检测右侧邻居 (防止 End 越过下一个的 Start)
+        if (currentIndex < allRegions.length - 1) {
+            const next = allRegions[currentIndex + 1];
+            if (region.end > next.start) {
+                // 强制卡住
+                region.setOptions({ end: next.start });
+            }
+        }
+
+        // 4. 更新UI文本 (使用 RAF 节流)
         if (animationFrameId) cancelAnimationFrame(animationFrameId);
         animationFrameId = requestAnimationFrame(() => {
             const row = document.getElementById(`row-${region.id}`);
             if (row) row.querySelector('.mt-time-disp').innerText = formatTime(region.start);
         });
     });
+
+    // --- 对齐按钮逻辑 (带防重叠检测) ---
+    function safeSetStart(region, newStart) {
+        // 查找前一个 region
+        const regions = wsRegions.getRegions().sort((a, b) => a.start - b.start);
+        const currentIndex = regions.findIndex(r => r.id === region.id);
+        
+        let limit = 0;
+        if(currentIndex > 0) limit = regions[currentIndex-1].end;
+        
+        // 如果新起点比前一个的终点还早，就只能贴上前一个的终点
+        const actualStart = Math.max(limit, newStart);
+        
+        // 还要保证 start < end
+        if(actualStart < region.end) {
+             region.setOptions({ start: actualStart });
+        }
+    }
+
+    function safeSetEnd(region, newEnd) {
+        const regions = wsRegions.getRegions().sort((a, b) => a.start - b.start);
+        const currentIndex = regions.findIndex(r => r.id === region.id);
+        
+        let limit = ws.getDuration();
+        if(currentIndex < regions.length - 1) limit = regions[currentIndex+1].start;
+        
+        const actualEnd = Math.min(limit, newEnd);
+        
+        if(actualEnd > region.start) {
+            region.setOptions({ end: actualEnd });
+        }
+    }
+
+    document.getElementById('mt-set-start').onclick = () => {
+        if (!currentSelectedRegionId) return alert("请先双击选中一行歌词");
+        const region = wsRegions.getRegions().find(r => r.id === currentSelectedRegionId);
+        if (region) safeSetStart(region, ws.getCurrentTime());
+    };
+
+    document.getElementById('mt-set-end').onclick = () => {
+        if (!currentSelectedRegionId) return alert("请先双击选中一行歌词");
+        const region = wsRegions.getRegions().find(r => r.id === currentSelectedRegionId);
+        if (region) safeSetEnd(region, ws.getCurrentTime());
+    };
+
+    // --- 播放进度逻辑 ---
+    let lastActiveRegionId = null;
+    let lastActiveRowEl = null;
+    const checkActiveRegion = throttle((currentTime) => {
+        const regions = wsRegions.getRegions();
+        const activeRegion = regions.find(r => currentTime >= r.start && currentTime < r.end);
+
+        if (activeRegion && activeRegion.id !== lastActiveRegionId) {
+            lastActiveRegionId = activeRegion.id;
+            if (lastActiveRowEl) lastActiveRowEl.classList.remove('mt-row-active');
+
+            const newRow = document.getElementById(`row-${activeRegion.id}`);
+            if(newRow) {
+                lastActiveRowEl = newRow;
+                newRow.classList.add('mt-row-active');
+                if(activeRegion.id !== currentSelectedRegionId) {
+                    newRow.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                }
+            }
+        }
+    }, 100);
+    ws.on('timeupdate', checkActiveRegion);
 }
 
 // --- 7. 导出 ---
 async function exportLrc(embed) {
     if (!window.mtRegions) return;
     const regions = window.mtRegions.getRegions().sort((a, b) => a.start - b.start);
-    
     let lrcContent = "";
     regions.forEach(r => {
         const row = document.getElementById(`row-${r.id}`);
