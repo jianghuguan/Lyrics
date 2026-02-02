@@ -64,6 +64,23 @@ function createCustomPopup(htmlContent) {
         #mt-waveform::-webkit-scrollbar { height: 10px; }
         #mt-waveform::-webkit-scrollbar-track { background: #111; border-radius: 4px; }
         #mt-waveform::-webkit-scrollbar-thumb { background: #555; border-radius: 5px; border: 2px solid #111; }
+        
+        /* 选中的行样式 */
+        .mt-row-selected {
+            border: 2px solid #ffc107 !important; /* 金色边框表示选中 */
+            background-color: #333322 !important;
+        }
+        /* 播放激活的行样式 (如果被选中，会被覆盖或叠加) */
+        .mt-row-active {
+            background-color: #334455;
+        }
+        
+        .mt-control-btn {
+            background: #444; color: #eee; border: 1px solid #666; 
+            padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px;
+        }
+        .mt-control-btn:hover { background: #555; }
+        .mt-control-btn:active { background: #333; }
     `;
     document.head.appendChild(style);
 
@@ -101,7 +118,7 @@ function createCustomPopup(htmlContent) {
 
 // --- 3. 插件入口 ---
 jQuery(async () => {
-    console.log("🎵 Music Tagger Loaded (Rescue Mode)");
+    console.log("🎵 Music Tagger Loaded (Edit Mode)");
     setTimeout(addMusicTaggerButton, 1000);
 });
 
@@ -151,17 +168,27 @@ function openTaggerModal() {
         <div id="mt-status" style="color:cyan; font-weight:bold; height:20px; font-size:14px;"></div>
 
         <div id="mt-editor-area" style="display:none; flex-direction:column; flex:1; border-top:1px solid #444; padding-top:10px;">
-            <div style="display:flex; gap:15px; margin-bottom:10px; align-items:center; position:sticky; top:0; background:#1e1e1e; z-index:10; padding:10px 0; border-bottom:1px solid #333;">
+            <div style="display:flex; gap:15px; margin-bottom:5px; align-items:center; position:sticky; top:0; background:#1e1e1e; z-index:10; padding:10px 0; border-bottom:1px solid #333; flex-wrap:wrap;">
                 <button id="mt-play-pause" style="background:#28a745; color:white; border:none; padding:5px 15px; border-radius:4px; cursor:pointer;">▶ 播放/暂停</button>
-                <div style="display:flex; align-items:center; gap:5px; color:#ccc; font-size:12px;">
-                    <span>🔍 缩放:</span>
-                    <input type="range" id="mt-zoom" min="10" max="300" value="50" style="width:100px;">
+                
+                <!-- 新增对齐按钮组 -->
+                <div style="display:flex; gap:5px; border-left:1px solid #444; padding-left:15px;">
+                    <button id="mt-set-start" class="mt-control-btn" title="将选中歌词条的起点移动到当前播放线">⇤ 左侧对齐播放线</button>
+                    <button id="mt-set-end" class="mt-control-btn" title="将选中歌词条的终点移动到当前播放线">右侧对齐播放线 ⇥</button>
                 </div>
-                <div style="color:#aaa; font-size:12px; margin-left:auto;">
-                    🖱️ 双击波形空白处可手动添加歌词
+
+                <div style="display:flex; align-items:center; gap:5px; color:#ccc; font-size:12px; margin-left:auto;">
+                    <span>🔍 缩放:</span>
+                    <input type="range" id="mt-zoom" min="10" max="300" value="50" style="width:80px;">
                 </div>
             </div>
+            
+            <div style="color:#aaa; font-size:12px; margin-bottom:5px;">
+                🖱️ 双击列表或波形可<b>选中</b>歌词条。选中后可左右拖动波形，使用上方按钮对齐。
+            </div>
+
             <div id="mt-waveform" style="width: 100%; height: 135px; background: #000; border-radius: 4px; margin-bottom: 15px; cursor: text; overflow-x: auto; overflow-y: hidden;"></div>
+            
             <div id="mt-lyrics-scroll-area" style="background: #141414; padding: 10px; border-radius: 4px; border: 1px solid #333; height: 450px; overflow-y: auto; overscroll-behavior: contain; position: relative;">
                 <div id="mt-rows-container"></div>
             </div>
@@ -197,7 +224,7 @@ async function runAIAndInitEditor() {
 
     if (!file || !apiKey) return alert("请先选择文件并填写 Key");
 
-    status.innerText = "⏳ 正在分析 (强制分句模式)...";
+    status.innerText = "⏳ 正在分析...";
     document.getElementById('mt-process-btn').disabled = true;
 
     try {
@@ -205,8 +232,7 @@ async function runAIAndInitEditor() {
         formData.append("file", file);
         formData.append("model", "whisper-large-v3");
         formData.append("response_format", "verbose_json");
-        // 【关键】修改提示词，强制要求按行切分，即使是短句也不要合并
-        formData.append("prompt", "Split the lyrics line by line carefully. Do not merge multiple lines into one segment. Transcribe every single line. 一行歌词一个时间戳。");
+        formData.append("prompt", "Split the lyrics line by line carefully. Do not merge multiple lines into one segment. 一行歌词一个时间戳。");
         
         const response = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
             method: "POST", headers: { "Authorization": `Bearer ${apiKey}` }, body: formData
@@ -220,7 +246,7 @@ async function runAIAndInitEditor() {
         document.getElementById('mt-setup-area').style.display = 'none'; 
         
         await initWaveSurfer(file, data.segments, rawText);
-        status.innerText = "🎵 完成！AI 遗漏的歌词已自动补在末尾，请拖动调整。双击波形可新增。";
+        status.innerText = "🎵 完成！双击列表选中，使用上方按钮对齐。";
 
     } catch (e) {
         status.innerText = "❌ 错误: " + e.message;
@@ -228,7 +254,7 @@ async function runAIAndInitEditor() {
     }
 }
 
-// --- 6. 编辑器逻辑 (防丢失 & 双击添加) ---
+// --- 6. 编辑器逻辑 ---
 async function initWaveSurfer(fileBlob, segments, userRawText) {
     if (window.mtWaveSurfer) window.mtWaveSurfer.destroy();
     
@@ -258,15 +284,42 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
     window.mtWaveSurfer = ws;
     window.mtRegions = wsRegions;
 
+    // --- 状态管理 ---
+    let currentSelectedRegionId = null; 
+
     const userLines = userRawText.split('\n').filter(l => l.trim());
     const container = document.getElementById('mt-rows-container');
     container.innerHTML = "";
+
+    // 选中逻辑
+    function selectRegion(id) {
+        currentSelectedRegionId = id;
+        
+        // 1. 更新 UI 列表的高亮
+        const allRows = container.children;
+        for (let row of allRows) {
+            row.classList.remove('mt-row-selected');
+        }
+        const targetRow = document.getElementById(`row-${id}`);
+        if(targetRow) {
+            targetRow.classList.add('mt-row-selected');
+            targetRow.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }
+
+        // 2. 更新波形显示 (可选：让波形滚动到这里)
+        const reg = wsRegions.getRegions().find(r => r.id === id);
+        if(reg) {
+            // 注意：不要在选中时自动播放，也不要强制把波形拉过来，防止用户正在听其他地方
+            // 仅仅是状态标记
+        }
+    }
 
     // 辅助函数：创建一行 UI
     function createRow(regionId, initialText, startTime) {
         const row = document.createElement('div');
         row.id = `row-${regionId}`;
-        row.style.cssText = "display:flex; gap:10px; margin-bottom:8px; align-items:center; background:#222; padding:10px; border-radius:6px; border-left:4px solid transparent;";
+        // 增加 border 用于显示选中状态
+        row.style.cssText = "display:flex; gap:10px; margin-bottom:8px; align-items:center; background:#222; padding:10px; border-radius:6px; border:2px solid transparent;";
         row.innerHTML = `
             <span class="mt-idx" style="color:#666; font-size:14px; width:25px; font-weight:bold;">#</span>
             <input type="text" class="mt-row-text" value="${initialText}" style="flex:1; background:#333; color:#eee; border:none; padding:8px; border-radius:4px; font-size:14px;">
@@ -280,24 +333,28 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
             if(reg) reg.setOptions({ content: `<div style="color:#fff; font-size:10px; padding:2px; overflow:hidden; white-space:nowrap; pointer-events:none;">${e.target.value}</div>` });
         });
 
-        // 也可以删除
+        // 删除
         row.querySelector('.mt-del-btn').onclick = (e) => {
             e.stopPropagation();
             const reg = wsRegions.getRegions().find(r => r.id === regionId);
             if(reg) { reg.remove(); row.remove(); updateIndices(); }
         };
 
-        // 点击定位
-        row.onclick = (e) => {
+        // 【修改】单击不再播放，防止误触。保留输入框点击。
+        // 【新增】双击选中
+        row.ondblclick = (e) => {
             if(e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON') {
                 const reg = wsRegions.getRegions().find(r => r.id === regionId);
-                if(reg) ws.setTime(reg.start);
+                if(reg) {
+                    ws.setTime(reg.start); // 双击列表还是跳过去比较方便
+                    selectRegion(regionId);
+                }
             }
         };
+
         return row;
     }
 
-    // 辅助函数：更新所有行的序号
     function updateIndices() {
         const rows = document.getElementById('mt-rows-container').children;
         Array.from(rows).forEach((row, i) => {
@@ -308,43 +365,38 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
     ws.on('ready', () => {
         ws.zoom(50);
         const duration = ws.getDuration();
-        
-        // 【核心修复】：确定要生成的条目总数，取 AI 片段数和用户行数的最大值
         const loopCount = Math.max(segments.length, userLines.length);
         
         for (let i = 0; i < loopCount; i++) {
             let start, end, text;
-            const seg = segments[i]; // 尝试获取 AI 数据
-            const userLine = userLines[i]; // 尝试获取用户文本
+            const seg = segments[i]; 
+            const userLine = userLines[i];
 
             if (seg) {
-                // 情况A: AI 有数据，正常使用
                 start = seg.start;
                 end = seg.end;
                 text = userLine || seg.text.trim();
             } else {
-                // 情况B: AI 没数据了，但用户还有文本 -> 开启“救援模式”
-                // 将丢失的歌词放在音频末尾，每条 2 秒，依次堆叠
-                // 留出最后 5 秒作为缓冲区，如果没有空间就在最后 2 秒堆叠
                 let safeStart = Math.max(0, duration - 10 + (i - segments.length) * 2);
                 if (safeStart >= duration) safeStart = duration - 2;
-                
                 start = safeStart;
                 end = start + 2; 
-                text = userLine || "MISSING LYRIC"; // 如果也没有文本，就标记为丢失
+                text = userLine || "MISSING LYRIC";
             }
 
-            // 颜色区分：AI 生成的 vs 后来补的
             const color = seg ? 
                 ((i % 2 === 0) ? "rgba(0, 123, 255, 0.2)" : "rgba(40, 167, 69, 0.2)") : 
-                "rgba(255, 193, 7, 0.3)"; // 补救的显示黄色
+                "rgba(255, 193, 7, 0.3)";
 
             const region = wsRegions.addRegion({
+                id: `seg-${i}-${Date.now()}`, // 唯一ID
                 start: start,
                 end: end,
                 content: `<div style="color:#fff; font-size:10px; padding:2px; overflow:hidden; white-space:nowrap; pointer-events:none;">${text}</div>`,
                 color: color,
-                drag: true, resize: true
+                // 【核心修改】drag: false 确保在波形上拖动时不会移动歌词条，而是拖动波形视图
+                drag: false, 
+                resize: true 
             });
 
             container.appendChild(createRow(region.id, text, start));
@@ -352,57 +404,94 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         updateIndices();
     });
 
-    // 【新增功能】双击波形空白处，手动添加歌词条
-    ws.on('click', (relativeX) => {
-        // 这个 click 事件通常是点击波形定位，我们利用它来检测双击需要一点技巧
-        // 由于 wavesurfer 自身有 interaction，我们最好监听 wrapper 的 dblclick
+    // 监听波形图上的 Region 点击
+    wsRegions.on('region-clicked', (region, e) => {
+        e.stopPropagation();
+        // 单击不播放，也不移动。可以用来作为“选中”的快捷方式
+        // 但为了防止误触，我们把选中逻辑也放在双击？或者单击波形块=选中？
+        // 用户要求：双击选中。
     });
 
-    // 监听容器的双击事件来添加 Region
+    // 波形图的双击选中逻辑
+    wsRegions.on('region-double-clicked', (region, e) => {
+        e.stopPropagation();
+        selectRegion(region.id);
+    });
+
+    // 空白处双击添加
     document.getElementById('mt-waveform').ondblclick = (e) => {
+        // 由于 Wavesurfer 的 region 拦截了事件，这里只会触发空白处
+        const clickTime = ws.getCurrentTime();
         const duration = ws.getDuration();
-        const clickTime = ws.getCurrentTime(); // 双击时 cursor 已经跳过去了
-        
         const newRegion = wsRegions.addRegion({
             start: clickTime,
             end: Math.min(clickTime + 2, duration),
             content: `<div style="color:#fff; font-size:10px; padding:2px; overflow:hidden; white-space:nowrap; pointer-events:none;">新歌词</div>`,
-            color: "rgba(255, 255, 255, 0.3)"
+            color: "rgba(255, 255, 255, 0.3)",
+            drag: false, // 新增的也默认不能拖动
+            resize: true
         });
-
-        // 插入到 UI 列表中（简单起见，追加到最后，用户自己调整顺序目前比较难做，但至少能编辑了）
-        // 理想情况是按时间排序插入 DOM，这里简单追加
         const row = createRow(newRegion.id, "新歌词", clickTime);
         container.appendChild(row);
         updateIndices();
-        
-        // 自动滚动到底部
         row.scrollIntoView({ behavior: 'smooth' });
+        // 自动选中新建的
+        selectRegion(newRegion.id);
     };
 
-    wsRegions.on('region-clicked', (region, e) => { e.stopPropagation(); region.play(); });
+    // --- 按钮逻辑：对齐 ---
+    document.getElementById('mt-set-start').onclick = () => {
+        if (!currentSelectedRegionId) return alert("请先双击选中一行歌词");
+        const region = wsRegions.getRegions().find(r => r.id === currentSelectedRegionId);
+        if (region) {
+            const now = ws.getCurrentTime();
+            if (now >= region.end) {
+                // 如果当前时间比结束时间还晚，自动把结束时间往后推，保持最小间隔
+                region.setOptions({ start: now, end: now + 1 });
+            } else {
+                region.setOptions({ start: now });
+            }
+        }
+    };
 
-    // 性能优化版 Timeupdate
+    document.getElementById('mt-set-end').onclick = () => {
+        if (!currentSelectedRegionId) return alert("请先双击选中一行歌词");
+        const region = wsRegions.getRegions().find(r => r.id === currentSelectedRegionId);
+        if (region) {
+            const now = ws.getCurrentTime();
+            if (now <= region.start) {
+                // 如果当前时间比开始时间还早，自动把开始时间往前推
+                region.setOptions({ end: now, start: Math.max(0, now - 1) });
+            } else {
+                region.setOptions({ end: now });
+            }
+        }
+    };
+
+    // --- 播放进度逻辑 ---
     let lastActiveRegionId = null;
     let lastActiveRowEl = null;
     
     const checkActiveRegion = throttle((currentTime) => {
+        // 只负责更新“正在播放”的样式 (Active)，不负责“选中” (Selected)
+        // 两者样式可以共存
         const regions = wsRegions.getRegions();
-        // 找到开始时间 <= 当前时间 且 结束时间 > 当前时间的
         const activeRegion = regions.find(r => currentTime >= r.start && currentTime < r.end);
 
         if (activeRegion && activeRegion.id !== lastActiveRegionId) {
             lastActiveRegionId = activeRegion.id;
+            
+            // 清除上一个播放的高亮（背景色）
             if (lastActiveRowEl) {
-                lastActiveRowEl.style.background = '#222';
-                lastActiveRowEl.style.borderLeftColor = 'transparent';
+                lastActiveRowEl.classList.remove('mt-row-active');
             }
+
             const newRow = document.getElementById(`row-${activeRegion.id}`);
             if(newRow) {
                 lastActiveRowEl = newRow;
-                newRow.style.background = '#334455';
-                newRow.style.borderLeftColor = '#007bff';
-                newRow.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                newRow.classList.add('mt-row-active');
+                // 自动滚动 (仅当没有手动选中时，或者比较温和地滚动)
+                newRow.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
             }
         }
     }, 100);
@@ -422,17 +511,14 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
 // --- 7. 导出 ---
 async function exportLrc(embed) {
     if (!window.mtRegions) return;
-    // 导出时必须按 Start Time 重新排序，因为手动添加或拖拽后顺序可能变了
     const regions = window.mtRegions.getRegions().sort((a, b) => a.start - b.start);
     
     let lrcContent = "";
     regions.forEach(r => {
         const row = document.getElementById(`row-${r.id}`);
-        // 如果行被删了但 region 还在（异常情况），取 region content
         let text = "";
         if (row) text = row.querySelector('.mt-row-text').value;
         else {
-             // 尝试从 content HTML 解析纯文本，或直接空
              const temp = document.createElement('div');
              temp.innerHTML = r.content.innerHTML || "";
              text = temp.innerText;
