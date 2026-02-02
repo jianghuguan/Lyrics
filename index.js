@@ -15,7 +15,6 @@ function saveSettings(newSettings) {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(newSettings));
 }
 
-// 节流函数 (防卡顿)
 function throttle(func, limit) {
     let inThrottle;
     return function() {
@@ -56,7 +55,20 @@ function createCustomPopup(htmlContent) {
 
     const style = document.createElement('style');
     style.innerHTML = `
-        .wavesurfer-region-handle { width: 12px !important; background-color: rgba(255, 255, 255, 0.4) !important; }
+        /* 核心修复：让 Region 本体不阻挡鼠标事件，从而可以滑动波形 */
+        .wavesurfer-region { 
+            pointer-events: none !important; 
+            z-index: 4; 
+        }
+        
+        /* 但是手柄必须能操作，且给大一点方便点 */
+        .wavesurfer-region-handle { 
+            pointer-events: auto !important; 
+            width: 10px !important; 
+            background-color: rgba(255, 255, 255, 0.5) !important;
+            z-index: 5;
+        }
+
         .mt-no-select { user-select: none; -webkit-user-select: none; }
         #mt-lyrics-scroll-area::-webkit-scrollbar { width: 8px; }
         #mt-lyrics-scroll-area::-webkit-scrollbar-track { background: #1a1a1a; }
@@ -114,7 +126,7 @@ function createCustomPopup(htmlContent) {
 
 // --- 3. 插件入口 ---
 jQuery(async () => {
-    console.log("🎵 Music Tagger Loaded (Collision Fix)");
+    console.log("🎵 Music Tagger Loaded (Swipe Fix)");
     setTimeout(addMusicTaggerButton, 1000);
 });
 
@@ -167,8 +179,8 @@ function openTaggerModal() {
             <div style="display:flex; gap:15px; margin-bottom:5px; align-items:center; position:sticky; top:0; background:#1e1e1e; z-index:10; padding:10px 0; border-bottom:1px solid #333; flex-wrap:wrap;">
                 <button id="mt-play-pause" style="background:#28a745; color:white; border:none; padding:5px 15px; border-radius:4px; cursor:pointer;">▶ 播放/暂停</button>
                 <div style="display:flex; gap:5px; border-left:1px solid #444; padding-left:15px;">
-                    <button id="mt-set-start" class="mt-control-btn" title="将选中歌词条的起点移动到当前播放线">⇤ 左侧对齐播放线</button>
-                    <button id="mt-set-end" class="mt-control-btn" title="将选中歌词条的终点移动到当前播放线">右侧对齐播放线 ⇥</button>
+                    <button id="mt-set-start" class="mt-control-btn" title="强制将当前句起点设为播放线（会自动挤压上一句）">⇤ 强制对齐播放线</button>
+                    <button id="mt-set-end" class="mt-control-btn" title="强制将当前句终点设为播放线（会自动挤压下一句）">强制对齐播放线 ⇥</button>
                 </div>
                 <div style="display:flex; align-items:center; gap:5px; color:#ccc; font-size:12px; margin-left:auto;">
                     <span>🔍 缩放:</span>
@@ -177,7 +189,7 @@ function openTaggerModal() {
             </div>
             
             <div style="color:#aaa; font-size:12px; margin-bottom:5px;">
-                🖱️ 双击选中歌词条，左右拖动边界会自动避让邻居。
+                🖱️ <b>双击</b> 波形空白或色块可选定；<b>左右滑动</b> 波形可浏览。拖动边缘调整。
             </div>
 
             <div id="mt-waveform" style="width: 100%; height: 135px; background: #000; border-radius: 4px; margin-bottom: 15px; cursor: text; overflow-x: auto; overflow-y: hidden;"></div>
@@ -225,7 +237,7 @@ async function runAIAndInitEditor() {
         formData.append("file", file);
         formData.append("model", "whisper-large-v3");
         formData.append("response_format", "verbose_json");
-        formData.append("prompt", "One line of lyrics corresponds to one timestamp. 一行歌词对应一个时间戳。");
+        formData.append("prompt", "Split the lyrics line by line. Do not merge lines.");
         
         const response = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
             method: "POST", headers: { "Authorization": `Bearer ${apiKey}` }, body: formData
@@ -239,7 +251,7 @@ async function runAIAndInitEditor() {
         document.getElementById('mt-setup-area').style.display = 'none'; 
         
         await initWaveSurfer(file, data.segments, rawText);
-        status.innerText = "🎵 完成！";
+        status.innerText = "🎵 完成！已优化触摸滑动体验。";
 
     } catch (e) {
         status.innerText = "❌ 错误: " + e.message;
@@ -270,7 +282,8 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         autoCenter: true,
         cursorColor: '#ff0000',
         cursorWidth: 2,
-        backend: 'WebAudio'
+        backend: 'WebAudio',
+        interact: true // 允许交互（滑动）
     });
 
     const wsRegions = ws.registerPlugin(RegionsPlugin.create());
@@ -339,78 +352,91 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         const duration = ws.getDuration();
         const loopCount = Math.max(segments.length, userLines.length);
         
+        // 【修复1】动态计算救援模式的时间戳，防止堆叠
+        let lastEndTime = 0; 
+
         for (let i = 0; i < loopCount; i++) {
             let start, end, text;
             const seg = segments[i]; 
             const userLine = userLines[i];
 
             if (seg) {
-                start = seg.start;
-                end = seg.end;
+                // 如果 AI 识别的开始时间 比 上一句结束时间还早（重叠），则强制往后推
+                start = Math.max(seg.start, lastEndTime);
+                // 保证最短 0.5s
+                end = Math.max(seg.end, start + 0.5);
                 text = userLine || seg.text.trim();
             } else {
-                let safeStart = Math.max(0, duration - 10 + (i - segments.length) * 2);
-                if (safeStart >= duration) safeStart = duration - 2;
-                start = safeStart;
-                end = start + 2; 
+                // 救援模式：紧接上一句，长度默认 3 秒
+                start = lastEndTime + 0.2; // 留 0.2s 缝隙
+                end = start + 3.0;
+                if (start >= duration) { start = duration - 1; end = duration; }
                 text = userLine || "MISSING LYRIC";
             }
+
+            lastEndTime = end; // 更新指针
+
             const color = seg ? ((i % 2 === 0) ? "rgba(0, 123, 255, 0.2)" : "rgba(40, 167, 69, 0.2)") : "rgba(255, 193, 7, 0.3)";
             
             const region = wsRegions.addRegion({
                 id: `seg-${i}-${Date.now()}`,
                 start: start, end: end,
                 content: `<div style="color:#fff; font-size:10px; padding:2px; overflow:hidden; white-space:nowrap; pointer-events:none;">${text}</div>`,
-                color: color, drag: false, resize: true 
+                color: color, 
+                drag: false, // 禁止整体拖动（通过 CSS pointer-events 实现穿透）
+                resize: true 
             });
             container.appendChild(createRow(region.id, text, start));
         }
         updateIndices();
     });
 
-    wsRegions.on('region-double-clicked', (region, e) => { e.stopPropagation(); selectRegion(region.id); });
-
+    // 【修复3】波形区域的双击逻辑
+    // 由于 CSS pointer-events: none，Region 接收不到点击。
+    // 我们在 Container 上监听，通过时间判断点到了哪个 Region。
     document.getElementById('mt-waveform').ondblclick = (e) => {
         const clickTime = ws.getCurrentTime();
-        const duration = ws.getDuration();
-        const newRegion = wsRegions.addRegion({
-            start: clickTime, end: Math.min(clickTime + 2, duration),
-            content: `<div style="color:#fff; font-size:10px; padding:2px; overflow:hidden; white-space:nowrap; pointer-events:none;">新歌词</div>`,
-            color: "rgba(255, 255, 255, 0.3)", drag: false, resize: true
-        });
-        const row = createRow(newRegion.id, "新歌词", clickTime);
-        container.appendChild(row);
-        updateIndices();
-        row.scrollIntoView({ behavior: 'smooth' });
-        selectRegion(newRegion.id);
+        const regions = wsRegions.getRegions();
+        
+        // 找有没有点中某个 Region 的时间范围
+        const clickedRegion = regions.find(r => clickTime >= r.start && clickTime < r.end);
+        
+        if (clickedRegion) {
+            // 如果点在歌词范围内 -> 选中
+            selectRegion(clickedRegion.id);
+        } else {
+            // 如果是空白 -> 新增
+            const duration = ws.getDuration();
+            const newRegion = wsRegions.addRegion({
+                start: clickTime, end: Math.min(clickTime + 2, duration),
+                content: `<div style="color:#fff; font-size:10px; padding:2px; overflow:hidden; white-space:nowrap; pointer-events:none;">新歌词</div>`,
+                color: "rgba(255, 255, 255, 0.3)", drag: false, resize: true
+            });
+            const row = createRow(newRegion.id, "新歌词", clickTime);
+            container.appendChild(row);
+            updateIndices();
+            row.scrollIntoView({ behavior: 'smooth' });
+            selectRegion(newRegion.id);
+        }
     };
 
-    // --- 核心修复：防重叠避让逻辑 ---
+    // --- 智能避让逻辑 ---
     let animationFrameId = null;
     wsRegions.on('region-updated', (region) => {
-        // 1. 获取所有区域并排序 (包含当前的)
         const allRegions = wsRegions.getRegions().sort((a, b) => a.start - b.start);
         const currentIndex = allRegions.findIndex(r => r.id === region.id);
 
-        // 2. 检测左侧邻居 (防止 Start 越过前一个的 End)
+        // 检测左侧 (拖动手柄时的被动限制)
         if (currentIndex > 0) {
             const prev = allRegions[currentIndex - 1];
-            if (region.start < prev.end) {
-                // 强制卡住
-                region.setOptions({ start: prev.end });
-            }
+            if (region.start < prev.end) region.setOptions({ start: prev.end });
         }
-
-        // 3. 检测右侧邻居 (防止 End 越过下一个的 Start)
+        // 检测右侧
         if (currentIndex < allRegions.length - 1) {
             const next = allRegions[currentIndex + 1];
-            if (region.end > next.start) {
-                // 强制卡住
-                region.setOptions({ end: next.start });
-            }
+            if (region.end > next.start) region.setOptions({ end: next.start });
         }
 
-        // 4. 更新UI文本 (使用 RAF 节流)
         if (animationFrameId) cancelAnimationFrame(animationFrameId);
         animationFrameId = requestAnimationFrame(() => {
             const row = document.getElementById(`row-${region.id}`);
@@ -418,51 +444,58 @@ async function initWaveSurfer(fileBlob, segments, userRawText) {
         });
     });
 
-    // --- 对齐按钮逻辑 (带防重叠检测) ---
-    function safeSetStart(region, newStart) {
-        // 查找前一个 region
-        const regions = wsRegions.getRegions().sort((a, b) => a.start - b.start);
-        const currentIndex = regions.findIndex(r => r.id === region.id);
-        
-        let limit = 0;
-        if(currentIndex > 0) limit = regions[currentIndex-1].end;
-        
-        // 如果新起点比前一个的终点还早，就只能贴上前一个的终点
-        const actualStart = Math.max(limit, newStart);
-        
-        // 还要保证 start < end
-        if(actualStart < region.end) {
-             region.setOptions({ start: actualStart });
-        }
-    }
-
-    function safeSetEnd(region, newEnd) {
-        const regions = wsRegions.getRegions().sort((a, b) => a.start - b.start);
-        const currentIndex = regions.findIndex(r => r.id === region.id);
-        
-        let limit = ws.getDuration();
-        if(currentIndex < regions.length - 1) limit = regions[currentIndex+1].start;
-        
-        const actualEnd = Math.min(limit, newEnd);
-        
-        if(actualEnd > region.start) {
-            region.setOptions({ end: actualEnd });
-        }
-    }
-
+    // --- 【修复2】强力对齐按钮 ---
+    // 逻辑：如果前一个挡路了，把前一个切掉，优先保证当前操作
     document.getElementById('mt-set-start').onclick = () => {
         if (!currentSelectedRegionId) return alert("请先双击选中一行歌词");
-        const region = wsRegions.getRegions().find(r => r.id === currentSelectedRegionId);
-        if (region) safeSetStart(region, ws.getCurrentTime());
+        const regions = wsRegions.getRegions().sort((a, b) => a.start - b.start);
+        const region = regions.find(r => r.id === currentSelectedRegionId);
+        if (!region) return;
+        
+        const now = ws.getCurrentTime();
+        const index = regions.findIndex(r => r.id === region.id);
+        
+        // 1. 处理前一个邻居
+        if (index > 0) {
+            const prev = regions[index - 1];
+            if (prev.end > now) {
+                // 如果播放线在前一个的肚子里，把前一个结束点缩回来
+                prev.setOptions({ end: now }); 
+            }
+        }
+        
+        // 2. 只有当前位置小于自身结束点时才移动，否则把结束点也推后
+        let newEnd = region.end;
+        if (now >= region.end) newEnd = now + 1;
+        
+        region.setOptions({ start: now, end: newEnd });
     };
 
     document.getElementById('mt-set-end').onclick = () => {
         if (!currentSelectedRegionId) return alert("请先双击选中一行歌词");
-        const region = wsRegions.getRegions().find(r => r.id === currentSelectedRegionId);
-        if (region) safeSetEnd(region, ws.getCurrentTime());
+        const regions = wsRegions.getRegions().sort((a, b) => a.start - b.start);
+        const region = regions.find(r => r.id === currentSelectedRegionId);
+        if (!region) return;
+        
+        const now = ws.getCurrentTime();
+        const index = regions.findIndex(r => r.id === region.id);
+        
+        // 1. 处理后一个邻居
+        if (index < regions.length - 1) {
+            const next = regions[index + 1];
+            if (next.start < now) {
+                // 如果播放线在后一个的肚子里，把后一个起点推后
+                next.setOptions({ start: now });
+            }
+        }
+        
+        let newStart = region.start;
+        if (now <= region.start) newStart = Math.max(0, now - 1);
+        
+        region.setOptions({ end: now, start: newStart });
     };
 
-    // --- 播放进度逻辑 ---
+    // --- 播放高亮 ---
     let lastActiveRegionId = null;
     let lastActiveRowEl = null;
     const checkActiveRegion = throttle((currentTime) => {
